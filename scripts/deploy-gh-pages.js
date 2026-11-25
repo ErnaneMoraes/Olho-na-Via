@@ -7,6 +7,83 @@ const ROOT_DIR = path.resolve(__dirname, '..');
 const ENV_PATH = path.join(ROOT_DIR, '.env');
 const DIST_DIR = path.join(ROOT_DIR, 'dist');
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function collectFilesByExt(dirPath, ext) {
+  if (!fs.existsSync(dirPath)) return [];
+  const results = [];
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      results.push(...collectFilesByExt(fullPath, ext));
+    } else if (entry.isFile() && entry.name.toLowerCase().endsWith(ext.toLowerCase())) {
+      results.push(fullPath);
+    }
+  }
+  return results;
+}
+
+function flattenAndRewriteVectorIconFonts(baseUrl) {
+  const vectorIconsAssetsDir = path.join(
+    DIST_DIR,
+    'assets',
+    'node_modules',
+    '@expo',
+    'vector-icons'
+  );
+  const ttfFiles = collectFilesByExt(vectorIconsAssetsDir, '.ttf');
+  if (ttfFiles.length === 0) {
+    throw new Error(
+      'Nenhum arquivo .ttf de ícone foi encontrado em dist/assets/node_modules/@expo/vector-icons.'
+    );
+  }
+
+  const fontsOutDir = path.join(DIST_DIR, 'fonts');
+  fs.mkdirSync(fontsOutDir, { recursive: true });
+
+  for (const srcFile of ttfFiles) {
+    const destFile = path.join(fontsOutDir, path.basename(srcFile));
+    fs.copyFileSync(srcFile, destFile);
+  }
+
+  fs.rmSync(path.join(DIST_DIR, 'assets', 'node_modules'), { recursive: true, force: true });
+
+  const webJsDir = path.join(DIST_DIR, '_expo', 'static', 'js', 'web');
+  const jsFiles = collectFilesByExt(webJsDir, '.js');
+  const fontUrlRegex = new RegExp(
+    `(?:${escapeRegExp(baseUrl)})?/assets/node_modules/@expo/vector-icons/[^"'\\s\`]*?/([^/"'\\s\`]+\\.ttf)`,
+    'g'
+  );
+
+  let totalRewrites = 0;
+  for (const jsFile of jsFiles) {
+    const original = fs.readFileSync(jsFile, 'utf8');
+    let fileRewrites = 0;
+    const updated = original.replace(fontUrlRegex, (_, fileName) => {
+      fileRewrites += 1;
+      return `${baseUrl}/fonts/${fileName}`;
+    });
+
+    if (fileRewrites > 0) {
+      fs.writeFileSync(jsFile, updated, 'utf8');
+      totalRewrites += fileRewrites;
+    }
+
+    if (/\/assets\/node_modules\/@expo\/vector-icons\/[^"'\s`]*\.ttf/i.test(updated)) {
+      throw new Error(
+        `Referências antigas de fontes @expo/vector-icons permaneceram em ${path.basename(jsFile)}.`
+      );
+    }
+  }
+
+  console.log(
+    `[Olho na Via] Fontes de ícones preparadas em dist/fonts/ (${ttfFiles.length} arquivos .ttf, ${totalRewrites} referências reescritas).`
+  );
+}
+
 function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) {
     throw new Error('Arquivo .env não encontrado na raiz do projeto.');
@@ -124,6 +201,8 @@ async function main() {
 
   fs.writeFileSync(path.join(DIST_DIR, '.nojekyll'), '');
   fs.copyFileSync(indexHtmlPath, path.join(DIST_DIR, '404.html'));
+
+  flattenAndRewriteVectorIconFonts(baseUrl);
 
   console.log('[Olho na Via] Publicando arquivos estáticos na branch gh-pages...');
   await publishToGhPages(DIST_DIR);

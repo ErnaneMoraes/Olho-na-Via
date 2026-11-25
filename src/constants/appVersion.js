@@ -1,8 +1,18 @@
 export const APP_NAME = 'Olho na Via';
-export const APP_VERSION = '1.5.1';
-export const APP_BUILD_TAG = '2026.11.25-remember-me-readonly-demo';
+export const APP_VERSION = '1.5.2';
+export const APP_BUILD_TAG = '2026.11.25-web-icons-camera-fix';
 
 export const APP_CHANGELOG = [
+  {
+    version: '1.5.2',
+    date: '25/11/2026',
+    title: 'Ícones Web no GitHub Pages, Flash/Lanterna e Obturador Silencioso',
+    highlights: [
+      'Corrigida a publicação das fontes @expo/vector-icons no GitHub Pages em dist/fonts/ com injeção @font-face na Web.',
+      'Adicionado controle de prontidão da câmera (onCameraReady) e ativação conjunta de flash e lanterna (enableTorch) na captura de buracos.',
+      'Som do obturador da câmera silenciado por padrão, com opção "Som da câmera ao fotografar" em Configurações.',
+    ],
+  },
   {
     version: '1.5.1',
     date: '25/11/2026',

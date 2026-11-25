@@ -2,7 +2,7 @@
 
 Aplicativo colaborativo para **Android** e **Navegadores Web** (**Expo SDK 58 / React Native 0.88**) voltado ao mapeamento cidadão de buracos e problemas de pavimentação na sua cidade, com foco em privacidade (**LGPD**) e operação **100% livre de chaves pagas para mapas**.
 
-> **Versão atual:** `v1.5.1` (`2026.11.25-remember-me-readonly-demo`) • **Plataformas:** Android nativo & Web Desktop/Mobile
+> **Versão atual:** `v1.5.2` (`2026.11.25-web-icons-camera-fix`) • **Plataformas:** Android nativo & Web Desktop/Mobile
 
 ---
 

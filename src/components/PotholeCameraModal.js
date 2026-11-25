@@ -73,10 +73,13 @@ export function PotholeCameraModal({
   previewTitle = 'Confirmar Foto do Buraco',
 }) {
   const insets = useSafeAreaInsets();
-  const { colors, radiusCard, radiusButton, borderWidth, cardShadow } = useAppSettings();
+  const { colors, radiusCard, radiusButton, borderWidth, cardShadow, settings } =
+    useAppSettings();
 
   const cameraRef = useRef(null);
   const [permission, requestPermission] = useCameraPermissions();
+  const [facing] = useState('back');
+  const [isCameraReady, setIsCameraReady] = useState(false);
   const [flashEnabled, setFlashEnabled] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -90,6 +93,8 @@ export function PotholeCameraModal({
   useEffect(() => {
     if (!visible) {
       setCapturedPhoto(null);
+      setIsCameraReady(false);
+      setFlashEnabled(false);
       setIsCapturing(false);
       setIsProcessing(false);
       setErrorMsg('');
@@ -107,6 +112,8 @@ export function PotholeCameraModal({
       await deleteTempPhoto(capturedPhoto.uri);
     }
     setCapturedPhoto(null);
+    setIsCameraReady(false);
+    setFlashEnabled(false);
     setErrorMsg('');
     onClose();
   };
@@ -117,9 +124,11 @@ export function PotholeCameraModal({
     setIsCapturing(true);
     try {
       const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.9,
+        quality: 0.85,
+        shutterSound: Boolean(settings?.cameraShutterSound),
       });
       if (photo?.uri) {
+        setIsCameraReady(false);
         setCapturedPhoto(photo);
       } else {
         setErrorMsg('Não foi possível capturar a foto. Tente novamente.');
@@ -146,6 +155,7 @@ export function PotholeCameraModal({
     if (capturedPhoto?.uri) {
       await deleteTempPhoto(capturedPhoto.uri);
     }
+    setIsCameraReady(false);
     setCapturedPhoto(null);
     setErrorMsg('');
   };
@@ -369,8 +379,10 @@ export function PotholeCameraModal({
       <CameraView
         ref={cameraRef}
         style={StyleSheet.absoluteFill}
-        facing="back"
+        facing={facing}
         flash={flashEnabled ? 'on' : 'off'}
+        enableTorch={isCameraReady && flashEnabled && facing === 'back'}
+        onCameraReady={() => setIsCameraReady(true)}
       />
 
       <View
@@ -416,7 +428,7 @@ export function PotholeCameraModal({
             <Text style={[styles.guideText, { color: colors.text }]}>{guideText}</Text>
           </View>
 
-          {!isWeb ? (
+          {!isWeb && facing === 'back' ? (
             <Pressable
               onPress={() => setFlashEnabled((v) => !v)}
               accessibilityLabel="Alternar flash"

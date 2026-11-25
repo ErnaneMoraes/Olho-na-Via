@@ -1,19 +1,22 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { MATERIAL_YOU_THEME, THEME_IDS } from '../theme/themes';
 
 const SETTINGS_STORAGE_KEY = '@olhonavia:settings';
 
 const DEFAULT_SETTINGS = {
   defaultAnonymous: false,
+  cameraShutterSound: false,
 };
 
 const AppSettingsContext = createContext(null);
 
 export function AppSettingsProvider({ children }) {
   const [defaultAnonymous, setDefaultAnonymousState] = useState(false);
+  const [cameraShutterSound, setCameraShutterSoundState] = useState(false);
   const [dataVersion, setDataVersion] = useState(0);
   const [isSettingsReady, setIsSettingsReady] = useState(false);
+  const settingsRef = useRef({ ...DEFAULT_SETTINGS });
 
   useEffect(() => {
     let active = true;
@@ -24,7 +27,14 @@ export function AppSettingsProvider({ children }) {
 
         if (rawSettings) {
           const parsed = JSON.parse(rawSettings);
-          setDefaultAnonymousState(Boolean(parsed.defaultAnonymous));
+          const nextDefaultAnonymous = Boolean(parsed.defaultAnonymous);
+          const nextShutterSound = Boolean(parsed.cameraShutterSound);
+          settingsRef.current = {
+            defaultAnonymous: nextDefaultAnonymous,
+            cameraShutterSound: nextShutterSound,
+          };
+          setDefaultAnonymousState(nextDefaultAnonymous);
+          setCameraShutterSoundState(nextShutterSound);
         }
       } catch {
         // Fallback silencioso para padrões seguros
@@ -39,21 +49,31 @@ export function AppSettingsProvider({ children }) {
     };
   }, []);
 
-  const setDefaultAnonymous = useCallback(async (value) => {
-    const boolVal = Boolean(value);
-    setDefaultAnonymousState(boolVal);
+  const persistSettings = useCallback(async (patch) => {
+    const merged = {
+      ...DEFAULT_SETTINGS,
+      ...settingsRef.current,
+      ...patch,
+    };
+    settingsRef.current = merged;
+    setDefaultAnonymousState(Boolean(merged.defaultAnonymous));
+    setCameraShutterSoundState(Boolean(merged.cameraShutterSound));
     try {
-      await AsyncStorage.setItem(
-        SETTINGS_STORAGE_KEY,
-        JSON.stringify({
-          ...DEFAULT_SETTINGS,
-          defaultAnonymous: boolVal,
-        })
-      );
+      await AsyncStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(merged));
     } catch {
       // Ignora erro de escrita pontual
     }
   }, []);
+
+  const setDefaultAnonymous = useCallback(
+    (value) => persistSettings({ defaultAnonymous: Boolean(value) }),
+    [persistSettings]
+  );
+
+  const setCameraShutterSound = useCallback(
+    (value) => persistSettings({ cameraShutterSound: Boolean(value) }),
+    [persistSettings]
+  );
 
   const notifyDataRestored = useCallback(() => {
     setDataVersion((v) => v + 1);
@@ -74,13 +94,27 @@ export function AppSettingsProvider({ children }) {
       typography: MATERIAL_YOU_THEME.typography,
       isMaterialYouTheme: true,
       isGoogleMapsTheme: true,
+      settings: {
+        defaultAnonymous,
+        cameraShutterSound,
+      },
       defaultAnonymous,
       setDefaultAnonymous,
+      cameraShutterSound,
+      setCameraShutterSound,
       dataVersion,
       notifyDataRestored,
       isSettingsReady,
     }),
-    [defaultAnonymous, setDefaultAnonymous, dataVersion, notifyDataRestored, isSettingsReady]
+    [
+      defaultAnonymous,
+      setDefaultAnonymous,
+      cameraShutterSound,
+      setCameraShutterSound,
+      dataVersion,
+      notifyDataRestored,
+      isSettingsReady,
+    ]
   );
 
   return <AppSettingsContext.Provider value={value}>{children}</AppSettingsContext.Provider>;

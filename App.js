@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { AppSettingsProvider, useAppSettings } from './src/context/AppSettingsContext';
@@ -104,6 +104,28 @@ export default function App() {
   const [fontsLoaded, fontError] = useFonts({
     ...FontAwesome6.font,
   });
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    const styleId = 'olhonavia-fa6-fonts';
+    if (document.getElementById(styleId)) return;
+
+    const rules = Object.entries(FontAwesome6.font || {})
+      .map(([family, asset]) => {
+        const uri = typeof asset === 'string' ? asset : asset?.uri;
+        if (!uri) return '';
+        return `@font-face { font-family: '${family}'; src: url('${uri}') format('truetype'); font-display: swap; }`;
+      })
+      .filter(Boolean)
+      .join('\n');
+
+    if (!rules) return;
+    const styleEl = document.createElement('style');
+    styleEl.id = styleId;
+    styleEl.type = 'text/css';
+    styleEl.appendChild(document.createTextNode(rules));
+    document.head.appendChild(styleEl);
+  }, []);
 
   if (!fontsLoaded && !fontError) {
     return null;

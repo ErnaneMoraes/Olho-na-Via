@@ -85,6 +85,8 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
     colors,
     defaultAnonymous,
     setDefaultAnonymous,
+    cameraShutterSound,
+    setCameraShutterSound,
     radiusCard,
     radiusInput,
     borderWidth,
@@ -304,7 +306,34 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
               </View>
             </AccordionSection>
 
-            {/* 2. Diagnóstico Anônimo (LGPD) */}
+            {/* 2. Câmera e Captura */}
+            <AccordionSection
+              title="Câmera e Captura"
+              icon="camera"
+              isOpen={openSection === 'camera'}
+              onToggle={() => toggleSection('camera')}
+            >
+              <View style={styles.subsectionList}>
+                <View style={styles.switchRow}>
+                  <View style={styles.switchInfo}>
+                    <Text style={[styles.switchTitle, { color: colors.text }]}>
+                      Som da câmera ao fotografar
+                    </Text>
+                    <Text style={[styles.helperText, { color: colors.textSecondary }]}>
+                      Reproduzir som do obturador ao registrar foto
+                    </Text>
+                  </View>
+                  <Switch
+                    value={cameraShutterSound}
+                    onValueChange={setCameraShutterSound}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                    thumbColor="#FFFFFF"
+                  />
+                </View>
+              </View>
+            </AccordionSection>
+
+            {/* 3. Diagnóstico Anônimo (LGPD) */}
             <AccordionSection
               title="Diagnóstico Anônimo (LGPD)"
               icon="stethoscope"
