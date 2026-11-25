@@ -1068,10 +1068,12 @@ export function PotholeDetailModal({
                       style={styles.flexOne}
                     />
                     <SaveButton
-                      label={savingVerification ? 'Salvando...' : 'Confirmar Atualização'}
+                      label={savingVerification ? 'Salvando...' : 'Confirmar'}
                       icon="check"
                       onPress={handleConfirmVerification}
                       loading={savingVerification}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
                       style={styles.flexOne}
                     />
                   </View>

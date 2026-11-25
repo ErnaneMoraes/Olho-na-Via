@@ -11,6 +11,9 @@ function BaseAppButton({
   disabled = false,
   loading = false,
   compact = false,
+  numberOfLines = 1,
+  adjustsFontSizeToFit = false,
+  minimumFontScale = 0.85,
   style,
   textStyle,
 }) {
@@ -76,7 +79,9 @@ function BaseAppButton({
         <View style={styles.content}>
           {icon ? <FontAwesome6 name={icon} size={compact ? 14 : 15} color={scheme.fg} /> : null}
           <Text
-            numberOfLines={1}
+            numberOfLines={numberOfLines}
+            adjustsFontSizeToFit={adjustsFontSizeToFit}
+            minimumFontScale={adjustsFontSizeToFit ? minimumFontScale : undefined}
             style={[
               styles.label,
               compact && styles.compactLabel,
@@ -141,6 +146,7 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 15,
+    flexShrink: 1,
   },
   compactLabel: {
     fontSize: 13,
