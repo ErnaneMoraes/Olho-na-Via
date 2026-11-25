@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { canCapturePotholePhotos } from '../utils/devicePlatform';
 import { recordDiagnosticEvent } from './diagnosticLogService';
 import {
+  fetchPendingReviewsSummaryByPotholeIds,
   hasUserPendingReviewForPothole,
   notifyRepairSubmitted,
 } from './notificationService';
@@ -78,10 +79,21 @@ async function mapCloudVerificationRow(row) {
   };
 }
 
-async function mapCloudPotholeRow(row, updates = [], cachedThumbOverride = null) {
+async function mapCloudPotholeRow(
+  row,
+  updates = [],
+  cachedThumbOverride = null,
+  pendingSummary = null
+) {
   const isAnon = Boolean(row.is_anonymous);
   const isFixed = row.status === 'fixed';
   const cachedThumb = cachedThumbOverride || (await cacheRemoteThumbnail(row.thumb_url));
+  const pendingCount = isFixed ? 0 : Number(pendingSummary?.count) || 0;
+  const pendingUpdateIds = isFixed
+    ? []
+    : Array.isArray(pendingSummary?.updateIds)
+      ? pendingSummary.updateIds
+      : [];
 
   return {
     id: row.id,
@@ -101,6 +113,8 @@ async function mapCloudPotholeRow(row, updates = [], cachedThumbOverride = null)
     createdAt: formatDateTimePtBr(row.created_at),
     createdAtIso: row.created_at,
     confirmations: Number(row.confirmations) || 1,
+    pendingReviewCount: pendingCount,
+    pendingReviewUpdateIds: pendingUpdateIds,
     verifications: updates,
     isCloudReport: true,
   };
@@ -382,13 +396,16 @@ export const SupabasePotholeAdapter = {
       }
 
       const ids = potholeRows.map((r) => r.id);
-      const { data: updateRows } = await supabase
-        .from('pothole_updates')
-        .select(
-          'id, pothole_id, user_id, author_nickname, is_anonymous, status, note, thumb_url, full_url, created_at'
-        )
-        .in('pothole_id', ids)
-        .order('created_at', { ascending: false });
+      const [{ data: updateRows }, pendingByPothole] = await Promise.all([
+        supabase
+          .from('pothole_updates')
+          .select(
+            'id, pothole_id, user_id, author_nickname, is_anonymous, status, note, thumb_url, full_url, created_at'
+          )
+          .in('pothole_id', ids)
+          .order('created_at', { ascending: false }),
+        fetchPendingReviewsSummaryByPotholeIds(ids),
+      ]);
 
       const updatesByPothole = {};
       if (Array.isArray(updateRows)) {
@@ -408,7 +425,12 @@ export const SupabasePotholeAdapter = {
 
       const mappedPotholes = await Promise.all(
         potholeRows.map((row) =>
-          mapCloudPotholeRow(row, updatesByPothole[row.id] || [])
+          mapCloudPotholeRow(
+            row,
+            updatesByPothole[row.id] || [],
+            null,
+            pendingByPothole[row.id] || null
+          )
         )
       );
 
@@ -672,10 +694,23 @@ export const SupabasePotholeAdapter = {
       });
     }
 
+    const fetchedSummaryMap = await fetchPendingReviewsSummaryByPotholeIds([potholeId]);
+    let pendingSummary = fetchedSummaryMap[potholeId] || null;
+    if (isOtherUserSuggestingFix && (!pendingSummary || pendingSummary.count === 0)) {
+      const prevIds = Array.isArray(currentPothole?.pendingReviewUpdateIds)
+        ? currentPothole.pendingReviewUpdateIds
+        : [];
+      pendingSummary = {
+        count: (Number(currentPothole?.pendingReviewCount) || 0) + 1,
+        updateIds: [...prevIds, insertedUpdate.id],
+      };
+    }
+
     return mapCloudPotholeRow(
       updatedRow,
       [mappedEntry, ...previousVerifications],
-      uploaded.cachedThumbUri
+      uploaded.cachedThumbUri,
+      pendingSummary
     );
   },
 
@@ -698,19 +733,27 @@ export const SupabasePotholeAdapter = {
         return LocalAsyncStoragePotholeAdapter.getReportById(potholeId);
       }
 
-      const { data: updateRows } = await supabase
-        .from('pothole_updates')
-        .select(
-          'id, pothole_id, user_id, author_nickname, is_anonymous, status, note, thumb_url, full_url, created_at'
-        )
-        .eq('pothole_id', potholeId)
-        .order('created_at', { ascending: false });
+      const [{ data: updateRows }, pendingByPothole] = await Promise.all([
+        supabase
+          .from('pothole_updates')
+          .select(
+            'id, pothole_id, user_id, author_nickname, is_anonymous, status, note, thumb_url, full_url, created_at'
+          )
+          .eq('pothole_id', potholeId)
+          .order('created_at', { ascending: false }),
+        fetchPendingReviewsSummaryByPotholeIds([potholeId]),
+      ]);
 
       const mappedUpdates = Array.isArray(updateRows)
         ? await Promise.all(updateRows.map((u) => mapCloudVerificationRow(u)))
         : [];
 
-      return mapCloudPotholeRow(row, mappedUpdates);
+      return mapCloudPotholeRow(
+        row,
+        mappedUpdates,
+        null,
+        pendingByPothole[row.id] || null
+      );
     } catch {
       return LocalAsyncStoragePotholeAdapter.getReportById(potholeId);
     }

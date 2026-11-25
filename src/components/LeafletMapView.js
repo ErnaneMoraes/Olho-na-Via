@@ -124,6 +124,21 @@ function buildLeafletHtml(initialLat, initialLng, palette) {
       letter-spacing: 0.2px;
       margin-top: 2px;
     }
+    .olho-pending-pill {
+      position: absolute;
+      left: 2px;
+      top: 2px;
+      padding: 1px 4px;
+      border-radius: 4px;
+      background: #FEF3C7;
+      border: 1px solid #F59E0B;
+      color: #92400E;
+      font-size: 7px;
+      font-weight: 800;
+      letter-spacing: 0.2px;
+      line-height: 1.1;
+      pointer-events: none;
+    }
     .olho-attribution {
       position: fixed;
       left: 12px;
@@ -148,8 +163,10 @@ function buildLeafletHtml(initialLat, initialLng, palette) {
     (function () {
       var INITIAL_LAT = ${Number(initialLat).toFixed(6)};
       var INITIAL_LNG = ${Number(initialLng).toFixed(6)};
-      var COLOR_OPEN = '${palette.danger}';
-      var COLOR_FIXED = '${palette.success}';
+      var COLOR_OPEN = '#DC2626';
+      var COLOR_PENDING = '#D97706';
+      var COLOR_FIXED = '#16A34A';
+      var CLOCK_SVG = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>';
 
       var map = null;
       var markerLayer = null;
@@ -170,8 +187,9 @@ function buildLeafletHtml(initialLat, initialLng, palette) {
 
       function createPinHtml(m, zoom) {
         var isFixed = m.status === 'fixed';
-        var color = isFixed ? COLOR_FIXED : COLOR_OPEN;
-        var symbol = isFixed ? '&#10003;' : '!';
+        var isPending = !isFixed && Number(m.pendingReviewCount || 0) > 0;
+        var color = isFixed ? COLOR_FIXED : isPending ? COLOR_PENDING : COLOR_OPEN;
+        var symbol = isFixed ? '&#10003;' : isPending ? CLOCK_SVG : '!';
         var borderWidth = m.isSelected ? 3.5 : 3;
 
         if (zoom < 15) {
@@ -183,12 +201,13 @@ function buildLeafletHtml(initialLat, initialLng, palette) {
           return (
             '<div class="olho-thumb-card" style="border:' + borderWidth + 'px solid ' + color + ';">' +
               '<img src="' + m.thumbSrc + '" alt="" />' +
+              (isPending ? '<div class="olho-pending-pill">REVISÃO</div>' : '') +
               '<div class="olho-thumb-badge" style="background:' + color + ';">' + symbol + '</div>' +
             '</div>'
           );
         }
 
-        var label = isFixed ? 'TAMPADO' : 'ABERTO';
+        var label = isFixed ? 'TAMPADO' : isPending ? 'REVISÃO' : 'ABERTO';
         return (
           '<div class="olho-thumb-card" style="border:' + borderWidth + 'px solid ' + color + ';">' +
             '<div style="color:' + color + ';font-size:15px;font-weight:800;line-height:1;">' + symbol + '</div>' +
@@ -461,6 +480,7 @@ export const LeafletMapView = forwardRef(function LeafletMapView(
           latitude: item.latitude,
           longitude: item.longitude,
           status: item.status === 'fixed' ? 'fixed' : 'open',
+          pendingReviewCount: Number(item.pendingReviewCount) || 0,
           isSelected: selectedId === item.id,
           thumbSrc,
         };

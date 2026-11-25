@@ -1,8 +1,18 @@
 export const APP_NAME = 'Olho na Via';
-export const APP_VERSION = '1.7.0';
-export const APP_BUILD_TAG = '2026.11.25-shutter-loader-multi-review';
+export const APP_VERSION = '1.7.1';
+export const APP_BUILD_TAG = '2026.11.25-yellow-review-status-pins';
 
 export const APP_CHANGELOG = [
+  {
+    version: '1.7.1',
+    date: '25/11/2026',
+    title: 'Estado Unificado em Amarelo para Revisões Pendentes no Mapa, Cabeçalho e Histórico',
+    highlights: [
+      'Pinos no mapa (Android e Web) passam a exibir estado visual próprio em âmbar/amarelo ("REVISÃO") quando há revisão pendente aguardando aprovação do autor.',
+      'Cabeçalho do modal substitui "Buraco Aberto" por pílula âmbar "Revisão solicitada" acompanhada da contagem exata ("1 revisão pendente" / "N revisões pendentes").',
+      'Itens do Histórico de Verificações enviados por cidadãos como solicitação de correção passam a exibir badge âmbar "Revisão solicitada", reservando o verde apenas para aprovações confirmadas.',
+    ],
+  },
   {
     version: '1.7.0',
     date: '25/11/2026',

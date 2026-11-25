@@ -177,6 +177,44 @@ export async function fetchPendingReviewsForPothole(potholeId) {
 }
 
 /**
+ * Busca um resumo agrupado por pothole_id das revisões pendentes ativas (count e updateIds).
+ */
+export async function fetchPendingReviewsSummaryByPotholeIds(potholeIds = []) {
+  const cleanIds = Array.isArray(potholeIds) ? potholeIds.filter(Boolean) : [];
+  if (!isSupabaseConfigured() || cleanIds.length === 0) {
+    return {};
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('user_notifications')
+      .select('pothole_id, pothole_update_id')
+      .in('pothole_id', cleanIds)
+      .eq('type', 'repair_review_requested')
+      .is('review_decision', null);
+
+    if (error || !Array.isArray(data)) {
+      return {};
+    }
+
+    const summary = {};
+    for (const row of data) {
+      if (!row?.pothole_id) continue;
+      if (!summary[row.pothole_id]) {
+        summary[row.pothole_id] = { count: 0, updateIds: [] };
+      }
+      summary[row.pothole_id].count += 1;
+      if (row.pothole_update_id) {
+        summary[row.pothole_id].updateIds.push(row.pothole_update_id);
+      }
+    }
+    return summary;
+  } catch {
+    return {};
+  }
+}
+
+/**
  * Verifica se o usuário autenticado já possui uma revisão pendente para o relato informado.
  */
 export async function hasUserPendingReviewForPothole(userId, potholeId) {

@@ -146,6 +146,7 @@ export function PotholeDetailModal({
   const [authorReviewError, setAuthorReviewError] = useState('');
   const [activePendingReview, setActivePendingReview] = useState(pendingReviewNotification);
   const [pendingReviews, setPendingReviews] = useState([]);
+  const [hasLoadedPendingReviews, setHasLoadedPendingReviews] = useState(false);
   const [adminBusy, setAdminBusy] = useState(false);
   const [adminIdentities, setAdminIdentities] = useState({});
   const [anonToastMsg, setAnonToastMsg] = useState('');
@@ -184,6 +185,7 @@ export function PotholeDetailModal({
   const loadPendingReviews = useCallback(async () => {
     if (!visible || !pothole?.id || !pothole?.isCloudReport) {
       setPendingReviews([]);
+      setHasLoadedPendingReviews(false);
       return;
     }
 
@@ -192,10 +194,13 @@ export function PotholeDetailModal({
       setPendingReviews(Array.isArray(list) ? list : []);
     } catch {
       setPendingReviews([]);
+    } finally {
+      setHasLoadedPendingReviews(true);
     }
   }, [visible, pothole?.id, pothole?.isCloudReport]);
 
   useEffect(() => {
+    setHasLoadedPendingReviews(false);
     if (!visible || !pothole?.id || !pothole?.isCloudReport) {
       setPendingReviews([]);
       return;
@@ -206,6 +211,7 @@ export function PotholeDetailModal({
     pothole?.id,
     pothole?.isCloudReport,
     pothole?.status,
+    pothole?.pendingReviewCount,
     pothole?.verifications?.length,
     loadPendingReviews,
   ]);
@@ -625,14 +631,20 @@ export function PotholeDetailModal({
       : activePendingReview && isPotholeOpen
         ? [activePendingReview]
         : [];
-  const hasPendingReviews = isPotholeOpen && effectivePendingReviews.length > 0;
+  const displayedPendingCount = isPotholeOpen
+    ? hasLoadedPendingReviews
+      ? effectivePendingReviews.length
+      : Math.max(effectivePendingReviews.length, Number(pothole?.pendingReviewCount) || 0)
+    : 0;
+  const hasPendingReviews = isPotholeOpen && displayedPendingCount > 0;
   const isAuthorWithPendingReviews = Boolean(
     session &&
       !session.isDemo &&
       pothole?.isCloudReport &&
       pothole?.authorUserId &&
       pothole.authorUserId === session.userId &&
-      hasPendingReviews
+      hasPendingReviews &&
+      effectivePendingReviews.length > 0
   );
   const userAlreadySubmittedPendingReview = Boolean(
     session &&
@@ -642,14 +654,32 @@ export function PotholeDetailModal({
       effectivePendingReviews.some((r) => r.actor_user_id === session.userId)
   );
   const pendingPillLabel =
-    effectivePendingReviews.length === 1
+    displayedPendingCount === 1
       ? '1 revisão pendente'
-      : `${effectivePendingReviews.length} revisões pendentes`;
+      : `${displayedPendingCount} revisões pendentes`;
 
-  const statusColor = isFixed ? colors.success : colors.danger;
-  const statusSoft = isFixed ? colors.successSoft : colors.dangerSoft;
-  const statusBadgeText = isFixed ? 'Já foi Tampado' : 'Buraco Aberto';
+  const amberBg = isDark ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7';
+  const amberBorder = '#F59E0B';
+  const amberText = isDark ? '#FDE68A' : '#92400E';
+  const amberAccent = isDark ? '#F59E0B' : '#D97706';
+
+  const statusColor = isFixed ? colors.success : hasPendingReviews ? amberText : colors.danger;
+  const statusSoft = isFixed ? colors.successSoft : hasPendingReviews ? amberBg : colors.dangerSoft;
+  const statusBadgeText = isFixed
+    ? 'Já foi Tampado'
+    : hasPendingReviews
+      ? 'Revisão solicitada'
+      : 'Buraco Aberto';
+  const statusBadgeIcon = isFixed
+    ? 'circle-check'
+    : hasPendingReviews
+      ? 'clock'
+      : 'triangle-exclamation';
   const verifications = Array.isArray(pothole.verifications) ? pothole.verifications : [];
+  const pendingUpdateIdSet = new Set([
+    ...(Array.isArray(pothole.pendingReviewUpdateIds) ? pothole.pendingReviewUpdateIds : []),
+    ...effectivePendingReviews.map((r) => r.pothole_update_id).filter(Boolean),
+  ]);
   const hasAnyPhoto = Boolean(pothole.thumbUri || pothole.fullUri);
 
   return (
@@ -713,9 +743,18 @@ export function PotholeDetailModal({
               <View style={[SharedStyles.contentContainer, styles.header]}>
                 <View style={styles.statusHeaderStack}>
                   <View style={styles.statusPillsRow}>
-                    <View style={[styles.statusBadge, { backgroundColor: statusSoft }]}>
+                    <View
+                      style={[
+                        styles.statusBadge,
+                        {
+                          backgroundColor: statusSoft,
+                          borderColor: !isFixed && hasPendingReviews ? amberBorder : 'transparent',
+                          borderWidth: !isFixed && hasPendingReviews ? 1 : 0,
+                        },
+                      ]}
+                    >
                       <FontAwesome6
-                        name={isFixed ? 'circle-check' : 'triangle-exclamation'}
+                        name={statusBadgeIcon}
                         size={13}
                         color={statusColor}
                       />
@@ -729,21 +768,21 @@ export function PotholeDetailModal({
                         style={[
                           styles.amberPendingPill,
                           {
-                            backgroundColor: isDark ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7',
-                            borderColor: '#F59E0B',
+                            backgroundColor: amberBg,
+                            borderColor: amberBorder,
                           },
                         ]}
                       >
                         <FontAwesome6
                           name="clock"
                           size={11}
-                          color={isDark ? '#FDE68A' : '#92400E'}
+                          color={amberText}
                         />
                         <Text
                           numberOfLines={1}
                           style={[
                             styles.amberPendingPillText,
-                            { color: isDark ? '#FDE68A' : '#92400E' },
+                            { color: amberText },
                           ]}
                         >
                           {pendingPillLabel}
@@ -1464,25 +1503,75 @@ export function PotholeDetailModal({
                 ) : (
                   <View style={styles.timelineList}>
                     {verifications.map((entry, idx) => {
-                      const entryFixed = entry.status === 'fixed';
-                      const entryColor = entryFixed ? colors.success : colors.danger;
-                      const entrySoft = entryFixed ? colors.successSoft : colors.dangerSoft;
                       const entryThumb = entry.thumbUri || entry.fullUri;
+                      const entryFixed = entry.status === 'fixed';
+                      const isAuthorApproval = Boolean(
+                        (!entryThumb &&
+                          entry.authorUserId &&
+                          entry.authorUserId === pothole.authorUserId) ||
+                          (isFixed &&
+                            (!pothole.authorUserId || entry.authorUserId === pothole.authorUserId))
+                      );
+                      const isCitizenReviewRequest =
+                        entryFixed &&
+                        !isAuthorApproval &&
+                        (pendingUpdateIdSet.has(entry.id) ||
+                          !isFixed ||
+                          Boolean(
+                            pothole.authorUserId && entry.authorUserId !== pothole.authorUserId
+                          ));
+
+                      const entryAccentColor = isCitizenReviewRequest
+                        ? amberAccent
+                        : entryFixed
+                          ? colors.success
+                          : colors.danger;
+                      const entryColor = isCitizenReviewRequest
+                        ? amberText
+                        : entryFixed
+                          ? colors.success
+                          : colors.danger;
+                      const entrySoft = isCitizenReviewRequest
+                        ? amberBg
+                        : entryFixed
+                          ? colors.successSoft
+                          : colors.dangerSoft;
+                      const entryIcon = isCitizenReviewRequest
+                        ? 'clock'
+                        : entryFixed
+                          ? 'circle-check'
+                          : 'triangle-exclamation';
+                      const entryBadgeLabel = isCitizenReviewRequest
+                        ? 'Revisão solicitada'
+                        : entryFixed
+                          ? !entryThumb
+                            ? 'Correção aprovada'
+                            : 'Já foi Tampado'
+                          : entry.statusLabel;
 
                       return (
                         <View
                           key={entry.id || idx}
-                          style={[styles.timelineItem, { borderLeftColor: entryColor }]}
+                          style={[styles.timelineItem, { borderLeftColor: entryAccentColor }]}
                         >
                           <View style={styles.timelineItemTop}>
-                            <View style={[styles.miniBadge, { backgroundColor: entrySoft }]}>
+                            <View
+                              style={[
+                                styles.miniBadge,
+                                {
+                                  backgroundColor: entrySoft,
+                                  borderColor: isCitizenReviewRequest ? amberBorder : 'transparent',
+                                  borderWidth: isCitizenReviewRequest ? 1 : 0,
+                                },
+                              ]}
+                            >
                               <FontAwesome6
-                                name={entryFixed ? 'circle-check' : 'triangle-exclamation'}
+                                name={entryIcon}
                                 size={10}
                                 color={entryColor}
                               />
                               <Text style={[styles.miniBadgeText, { color: entryColor }]}>
-                                {entry.statusLabel}
+                                {entryBadgeLabel}
                               </Text>
                             </View>
                             <Text
