@@ -1,8 +1,17 @@
 export const APP_NAME = 'Olho na Via';
-export const APP_VERSION = '1.7.4';
-export const APP_BUILD_TAG = '2026.11.25-anonymous-toggle-confirmation';
+export const APP_VERSION = '1.7.5';
+export const APP_BUILD_TAG = '2026.11.25-unique-report-views';
 
 export const APP_CHANGELOG = [
+  {
+    version: '1.7.5',
+    date: '25/11/2026',
+    title: 'Contagem de Visualizações Únicas por Relato',
+    highlights: [
+      'Implementada RPC atômica record_pothole_view e tabela pothole_views com deduplicação por usuário autenticado (user:<uid>) ou visitante anônimo persistente (@olhonavia:visitor_device_id).',
+      'Exibição discreta de visualizações únicas ("1 visualização única" / "N visualizações únicas") nos detalhes do relato e sincronização imediata no mapa.',
+    ],
+  },
   {
     version: '1.7.4',
     date: '25/11/2026',

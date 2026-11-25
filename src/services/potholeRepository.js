@@ -16,6 +16,75 @@ import { isSupabaseConfigured, supabase } from './supabaseClient';
 
 const REPORTS_STORAGE_KEY = '@olhonavia:reports';
 const SEED_UPDATES_STORAGE_KEY = '@olhonavia:seed_updates';
+const VISITOR_DEVICE_ID_KEY = '@olhonavia:visitor_device_id';
+
+let cachedVisitorDeviceId = null;
+
+function generateRandomVisitorUuid() {
+  try {
+    if (typeof globalThis !== 'undefined' && globalThis.crypto?.randomUUID) {
+      return globalThis.crypto.randomUUID();
+    }
+  } catch {
+    // Fallback para ambientes sem crypto.randomUUID
+  }
+  const part = () => Math.random().toString(36).slice(2, 10);
+  return `v_${Date.now().toString(36)}_${part()}_${part()}`;
+}
+
+export async function getOrCreateVisitorDeviceId() {
+  if (cachedVisitorDeviceId) {
+    return cachedVisitorDeviceId;
+  }
+
+  try {
+    const existing = await AsyncStorage.getItem(VISITOR_DEVICE_ID_KEY);
+    if (existing && existing.trim()) {
+      cachedVisitorDeviceId = existing.trim();
+      return cachedVisitorDeviceId;
+    }
+  } catch {
+    // Segue para gerar identificador em memória/storage
+  }
+
+  const created = generateRandomVisitorUuid();
+  cachedVisitorDeviceId = created;
+  try {
+    await AsyncStorage.setItem(VISITOR_DEVICE_ID_KEY, created);
+  } catch {
+    // Ignora falha pontual de escrita
+  }
+  return created;
+}
+
+export async function recordUniquePotholeView(potholeId) {
+  const idStr = String(potholeId || '').trim();
+  if (
+    !idStr ||
+    !isSupabaseConfigured() ||
+    idStr.startsWith('seed-') ||
+    idStr.startsWith('rep_')
+  ) {
+    return null;
+  }
+
+  try {
+    const visitorId = await getOrCreateVisitorDeviceId();
+    const { data, error } = await supabase.rpc('record_pothole_view', {
+      p_pothole_id: idStr,
+      p_visitor_id: visitorId,
+    });
+
+    if (error || data === null || data === undefined) {
+      return null;
+    }
+
+    const parsed = Number(data);
+    return Number.isFinite(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
 
 function createRepositoryError(message) {
   const err = new Error(message);
@@ -133,6 +202,7 @@ async function mapCloudPotholeRow(
     createdAt: formatDateTimePtBr(row.created_at),
     createdAtIso: row.created_at,
     confirmations: Number(row.confirmations) || 1,
+    viewCount: Number(row.view_count ?? 0),
     pendingReviewCount: pendingCount,
     pendingReviewUpdateIds: pendingUpdateIds,
     verifications: updates,
@@ -217,6 +287,7 @@ export const LocalAsyncStoragePotholeAdapter = {
       createdAt: formatDateTimePtBr(now),
       createdAtIso: now.toISOString(),
       confirmations: 1,
+      viewCount: 0,
       verifications: [],
       isLocalUserReport: true,
     };
@@ -387,7 +458,7 @@ export const SupabasePotholeAdapter = {
       let query = supabase
         .from('potholes')
         .select(
-          'id, user_id, author_nickname, is_anonymous, latitude, longitude, street_address, comment, status, thumb_url, full_url, confirmations, created_at'
+          'id, user_id, author_nickname, is_anonymous, latitude, longitude, street_address, comment, status, thumb_url, full_url, confirmations, view_count, created_at'
         )
         .order('created_at', { ascending: false })
         .limit(150);
@@ -537,7 +608,7 @@ export const SupabasePotholeAdapter = {
       .from('potholes')
       .insert(insertPayload)
       .select(
-        'id, user_id, author_nickname, is_anonymous, latitude, longitude, street_address, comment, status, thumb_url, full_url, confirmations, created_at'
+        'id, user_id, author_nickname, is_anonymous, latitude, longitude, street_address, comment, status, thumb_url, full_url, confirmations, view_count, created_at'
       )
       .single();
 
@@ -674,7 +745,7 @@ export const SupabasePotholeAdapter = {
       .update(potholeUpdateFields)
       .eq('id', potholeId)
       .select(
-        'id, user_id, author_nickname, is_anonymous, latitude, longitude, street_address, comment, status, thumb_url, full_url, confirmations, created_at'
+        'id, user_id, author_nickname, is_anonymous, latitude, longitude, street_address, comment, status, thumb_url, full_url, confirmations, view_count, created_at'
       )
       .single();
 
@@ -748,7 +819,7 @@ export const SupabasePotholeAdapter = {
       const { data: row, error } = await supabase
         .from('potholes')
         .select(
-          'id, user_id, author_nickname, is_anonymous, latitude, longitude, street_address, comment, status, thumb_url, full_url, confirmations, created_at'
+          'id, user_id, author_nickname, is_anonymous, latitude, longitude, street_address, comment, status, thumb_url, full_url, confirmations, view_count, created_at'
         )
         .eq('id', potholeId)
         .single();
@@ -801,6 +872,7 @@ export function createPotholeRepository(adapter) {
   return {
     listReports: (options) => adapter.listReports(options),
     getReportById: (potholeId, options) => adapter.getReportById(potholeId, options),
+    recordUniqueView: (potholeId) => recordUniquePotholeView(potholeId),
     applySeedOverrides: (seedList) => adapter.applySeedOverrides(seedList),
     createReport: (payload) => adapter.createReport(payload),
     createPothole: (payload) => adapter.createReport(payload),

@@ -40,8 +40,12 @@ create table if not exists public.potholes (
   thumb_url text not null,
   full_url text not null,
   confirmations integer not null default 1,
+  view_count integer not null default 0,
   created_at timestamptz not null default now()
 );
+
+alter table public.potholes
+  add column if not exists view_count integer not null default 0;
 
 alter table public.potholes
   drop constraint if exists potholes_lgpd_anonymous_check;
@@ -400,3 +404,72 @@ create policy "Authenticated users can notify repair review"
     and recipient_user_id is not null
     and recipient_user_id <> auth.uid()
   );
+
+-- 8. Visualizações Únicas por Relato (usuários autenticados + visitantes anônimos persistentes)
+create table if not exists public.pothole_views (
+  id uuid primary key default gen_random_uuid(),
+  pothole_id uuid not null references public.potholes(id) on delete cascade,
+  viewer_key text not null,
+  created_at timestamptz not null default now(),
+  constraint unique_pothole_viewer unique (pothole_id, viewer_key)
+);
+
+create index if not exists idx_pothole_views_pothole_id
+  on public.pothole_views (pothole_id);
+
+alter table public.pothole_views enable row level security;
+
+create or replace function public.record_pothole_view(
+  p_pothole_id uuid,
+  p_visitor_id text default null
+)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_viewer_key text;
+  v_inserted integer := 0;
+  v_view_count integer := 0;
+begin
+  if p_pothole_id is null then
+    return 0;
+  end if;
+
+  if auth.uid() is not null then
+    v_viewer_key := 'user:' || auth.uid()::text;
+  elsif p_visitor_id is not null and char_length(trim(p_visitor_id)) > 0 then
+    v_viewer_key := 'visitor:' || left(trim(p_visitor_id), 128);
+  else
+    select coalesce(view_count, 0)
+      into v_view_count
+      from public.potholes
+     where id = p_pothole_id;
+    return coalesce(v_view_count, 0);
+  end if;
+
+  insert into public.pothole_views (pothole_id, viewer_key)
+  values (p_pothole_id, v_viewer_key)
+  on conflict on constraint unique_pothole_viewer do nothing;
+
+  get diagnostics v_inserted = row_count;
+
+  if v_inserted > 0 then
+    update public.potholes
+       set view_count = coalesce(view_count, 0) + 1
+     where id = p_pothole_id
+    returning view_count into v_view_count;
+  else
+    select coalesce(view_count, 0)
+      into v_view_count
+      from public.potholes
+     where id = p_pothole_id;
+  end if;
+
+  return coalesce(v_view_count, 0);
+end;
+$$;
+
+revoke all on function public.record_pothole_view(uuid, text) from public;
+grant execute on function public.record_pothole_view(uuid, text) to anon, authenticated;

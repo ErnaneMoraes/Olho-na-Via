@@ -597,6 +597,16 @@ export function MapHomeScreen({
     [refreshNotifications]
   );
 
+  const handleViewCountUpdated = useCallback((potholeId, nextViewCount) => {
+    if (!potholeId || !Number.isFinite(nextViewCount)) return;
+    setPotholes((prev) =>
+      prev.map((item) => (item.id === potholeId ? { ...item, viewCount: nextViewCount } : item))
+    );
+    setSelectedPothole((prev) =>
+      prev && prev.id === potholeId ? { ...prev, viewCount: nextViewCount } : prev
+    );
+  }, []);
+
   const handleAdminPotholeDeleted = useCallback((deletedId) => {
     setDetailModalVisible(false);
     setSelectedPothole(null);
@@ -1206,6 +1216,7 @@ export function MapHomeScreen({
         onStartVerification={handleStartVerification}
         onCancelVerificationDraft={() => setPendingVerificationDraft(null)}
         onVerificationSaved={handleVerificationSaved}
+        onViewCountUpdated={handleViewCountUpdated}
         onAuthorReviewCompleted={refreshNotifications}
         onAdminPotholeDeleted={handleAdminPotholeDeleted}
         onAdminUpdateDeleted={handleAdminUpdateDeleted}

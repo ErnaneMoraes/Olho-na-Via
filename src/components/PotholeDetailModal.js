@@ -42,7 +42,10 @@ import {
   submitRepairAuthorReview,
 } from '../services/notificationService';
 import { deletePotholePhotos } from '../services/potholeMediaService';
-import { potholeRepository } from '../services/potholeRepository';
+import {
+  potholeRepository,
+  recordUniquePotholeView,
+} from '../services/potholeRepository';
 import { formatDateTimePtBr } from '../services/potholeSeedService';
 
 function notifyUser(title, message) {
@@ -100,6 +103,7 @@ export function PotholeDetailModal({
   onStartVerification,
   onCancelVerificationDraft,
   onVerificationSaved,
+  onViewCountUpdated,
   onAuthorReviewCompleted,
   onAdminPotholeDeleted,
   onAdminUpdateDeleted,
@@ -153,11 +157,13 @@ export function PotholeDetailModal({
   const [activePendingReview, setActivePendingReview] = useState(pendingReviewNotification);
   const [pendingReviews, setPendingReviews] = useState([]);
   const [hasLoadedPendingReviews, setHasLoadedPendingReviews] = useState(false);
+  const [displayViewCount, setDisplayViewCount] = useState(Number(pothole?.viewCount ?? 0));
   const [adminBusy, setAdminBusy] = useState(false);
   const [adminIdentities, setAdminIdentities] = useState({});
   const [anonToastMsg, setAnonToastMsg] = useState('');
   const anonToastTimerRef = useRef(null);
   const savingRef = useRef(false);
+  const recordedViewForIdRef = useRef(null);
 
   const triggerAnonToast = () => {
     if (anonToastTimerRef.current) {
@@ -186,7 +192,36 @@ export function PotholeDetailModal({
   useEffect(() => {
     setAuthorReviewFeedback('');
     setAuthorReviewError('');
-  }, [pothole?.id, visible]);
+    setDisplayViewCount(Number(pothole?.viewCount ?? 0));
+  }, [pothole?.id, pothole?.viewCount, visible]);
+
+  useEffect(() => {
+    if (!visible) {
+      recordedViewForIdRef.current = null;
+      return;
+    }
+
+    if (!pothole?.id || !pothole?.isCloudReport) {
+      return;
+    }
+
+    if (recordedViewForIdRef.current === pothole.id) {
+      return;
+    }
+
+    let active = true;
+    recordedViewForIdRef.current = pothole.id;
+
+    recordUniquePotholeView(pothole.id).then((nextCount) => {
+      if (!active || nextCount === null || !Number.isFinite(nextCount)) return;
+      setDisplayViewCount(nextCount);
+      onViewCountUpdated?.(pothole.id, nextCount);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [visible, pothole?.id, pothole?.isCloudReport, onViewCountUpdated]);
 
   const loadPendingReviews = useCallback(async () => {
     if (!visible || !pothole?.id || !pothole?.isCloudReport) {
@@ -1030,15 +1065,31 @@ export function PotholeDetailModal({
                 </Text>
 
                 <View style={[styles.metaFooter, { borderTopColor: colors.dividerColor }]}>
-                  <FontAwesome6 name="users" size={13} color={colors.primary} />
-                  <Text
-                    style={[
-                      styles.confirmationsText,
-                      { color: colors.textSecondary, fontVariant: typography.fontVariant },
-                    ]}
-                  >
-                    {pothole.confirmations || 1} confirmações da comunidade
-                  </Text>
+                  <View style={styles.metaStatItem}>
+                    <FontAwesome6 name="users" size={13} color={colors.primary} />
+                    <Text
+                      style={[
+                        styles.confirmationsText,
+                        { color: colors.textSecondary, fontVariant: typography.fontVariant },
+                      ]}
+                    >
+                      {pothole.confirmations || 1} confirmações da comunidade
+                    </Text>
+                  </View>
+
+                  <View style={styles.metaStatItem}>
+                    <FontAwesome6 name="eye" size={13} color={colors.textSecondary} />
+                    <Text
+                      style={[
+                        styles.confirmationsText,
+                        { color: colors.textSecondary, fontVariant: typography.fontVariant },
+                      ]}
+                    >
+                      {displayViewCount === 1
+                        ? '1 visualização única'
+                        : `${displayViewCount} visualizações únicas`}
+                    </Text>
+                  </View>
                 </View>
               </View>
 
@@ -2091,8 +2142,15 @@ const styles = StyleSheet.create({
   metaFooter: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
     borderTopWidth: 1,
     paddingTop: 9,
+    gap: 10,
+  },
+  metaStatItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 7,
   },
   confirmationsText: {
