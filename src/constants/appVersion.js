@@ -1,8 +1,19 @@
 export const APP_NAME = 'Olho na Via';
-export const APP_VERSION = '1.6.7';
-export const APP_BUILD_TAG = '2026.11.25-dark-mode-accordion-settings';
+export const APP_VERSION = '1.6.8';
+export const APP_BUILD_TAG = '2026.11.25-shutter-gps-repair-review-login-ui';
 
 export const APP_CHANGELOG = [
+  {
+    version: '1.6.8',
+    date: '25/11/2026',
+    title: 'Trava de GPS na Foto, Comentário Opcional, Notificações de Correção e Login UI',
+    highlights: [
+      'Captura instantânea de coordenadas GPS de alta precisão exatamente no clique do obturador (Android e Mobile Web), mantendo latitude/longitude travadas mesmo ao editar o endereço depois.',
+      'Comentário sobre o buraco agora é opcional no formulário e no banco, bastando foto verificada e GPS para publicar.',
+      'Notificações no app (sino com contador e lista) avisando o autor original quando outro usuário marca seu buraco como "Já foi Tampado", com cartão para Aprovar Correção ou Reabrir o relato.',
+      'Botão Lua/Sol no canto superior direito da tela de login e interruptor "Lembrar-me" redesenhado com alto contraste nos modos Claro e Escuro.',
+    ],
+  },
   {
     version: '1.6.7',
     date: '25/11/2026',

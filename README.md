@@ -2,11 +2,21 @@
 
 Aplicativo colaborativo para **Android** e **Navegadores Web** (**Expo SDK 58 / React Native 0.88**) voltado ao mapeamento cidadão de buracos e problemas de pavimentação na sua cidade, com foco em privacidade (**LGPD**) e operação **100% livre de chaves pagas para mapas**.
 
-> **Versão atual:** `v1.6.7` (`2026.11.25-dark-mode-accordion-settings`) • **Plataformas:** Android nativo & Web Desktop/Mobile
+> **Versão atual:** `v1.6.8` (`2026.11.25-shutter-gps-repair-review-login-ui`) • **Plataformas:** Android nativo & Web Desktop/Mobile
 
 ---
 
 ## Principais Recursos
+
+### Trava de GPS na Foto, Comentário Opcional, Notificações de Correção e Login UI (`v1.6.8`)
+- **GPS Travado no Clique da Foto (`PotholeCameraModal.js` & `NewReportModal.js`):**
+  - Ao acionar o obturador (Android nativo ou Mobile Web), o app solicita uma leitura GPS fresca de alta precisão em paralelo e trava `latitude`/`longitude` no payload da foto, permitindo editar apenas o nome da rua/referência antes de publicar.
+- **Comentário Opcional (`NewReportModal.js` & `potholeRepository.js`):**
+  - Novos relatos exigem apenas foto verificada, termo de privacidade e GPS válido; o campo de descrição passa a ser opcional.
+- **Notificações e Revisão pelo Autor (`notificationService.js`, `MapHomeScreen.js` & `PotholeDetailModal.js`):**
+  - Quando outro usuário marca um relato como `"Já foi Tampado"`, o autor original recebe uma notificação no sino do topo e pode clicar em `"Aprovar Correção"` ou `"Não foi tampado (Reabrir)"`.
+- **Login com Modo Escuro e Toggle de Alto Contraste (`AuthScreen.js`):**
+  - Botão Lua/Sol no topo direito para alternar Claro/Escuro antes de entrar e controle `"Lembrar-me"` com alto contraste visual.
 
 ### Painel Admin Responsivo, Lembrar-me & Modo Demo Somente Leitura (`v1.5.1`)
 - **Painel Administrativo Aprimorado (`AdminPanelModal.js` & `adminService.js`):**

@@ -45,7 +45,14 @@ export function NewReportModal({
     notifyDataRestored,
   } = useAppSettings();
 
-  const [coords, setCoords] = useState(fallbackCoords || null);
+  const [coords, setCoords] = useState(capturedMedia?.capturedCoords || fallbackCoords || null);
+  const [gpsLockedAtShutter, setGpsLockedAtShutter] = useState(
+    Boolean(
+      capturedMedia?.capturedCoords &&
+        Number.isFinite(capturedMedia.capturedCoords.latitude) &&
+        Number.isFinite(capturedMedia.capturedCoords.longitude)
+    )
+  );
   const [gpsLoading, setGpsLoading] = useState(false);
   const [streetAddress, setStreetAddress] = useState('');
   const [comment, setComment] = useState('');
@@ -88,11 +95,35 @@ export function NewReportModal({
     setAnonToastMsg('');
     setIsAnonymous(Boolean(initialAnonymous));
     setPrivacyConfirmed(Boolean(capturedMedia?.privacyConfirmed));
-    setCoords(fallbackCoords || null);
     setStreetAddress('');
+
+    const shutterCoords =
+      capturedMedia?.capturedCoords &&
+      Number.isFinite(capturedMedia.capturedCoords.latitude) &&
+      Number.isFinite(capturedMedia.capturedCoords.longitude)
+        ? capturedMedia.capturedCoords
+        : null;
 
     async function capturePreciseGpsAndStreet() {
       setGpsLoading(true);
+
+      // Se o GPS já foi capturado no momento exato do clique na foto, trava essas coordenadas
+      if (shutterCoords) {
+        setCoords(shutterCoords);
+        setGpsLockedAtShutter(true);
+        const addr = await reverseGeocodeCoordinate(
+          shutterCoords.latitude,
+          shutterCoords.longitude
+        );
+        if (active) {
+          setStreetAddress(addr.formattedAddress || '');
+          setGpsLoading(false);
+        }
+        return;
+      }
+
+      setGpsLockedAtShutter(false);
+      setCoords(fallbackCoords || null);
       let resolvedCoords = fallbackCoords || null;
 
       try {
@@ -143,7 +174,7 @@ export function NewReportModal({
     return () => {
       active = false;
     };
-  }, [visible, initialAnonymous, fallbackCoords]);
+  }, [visible, initialAnonymous, fallbackCoords, capturedMedia]);
 
   const handleDismiss = async () => {
     if (saving) return;
@@ -158,12 +189,8 @@ export function NewReportModal({
     setErrorMsg('');
 
     const trimmedComment = comment.trim();
-    if (trimmedComment.length < 5) {
-      setErrorMsg('Descreva o buraco com pelo menos 5 caracteres para ajudar outros motoristas.');
-      return;
-    }
 
-    if (!coords) {
+    if (!coords || !Number.isFinite(coords.latitude) || !Number.isFinite(coords.longitude)) {
       setErrorMsg('Aguarde a confirmação do GPS ou tente novamente.');
       return;
     }
@@ -285,10 +312,20 @@ export function NewReportModal({
               {gpsLoading ? (
                 <ActivityIndicator size="small" color={colors.primary} />
               ) : (
-                <FontAwesome6 name="location-crosshairs" size={14} color={colors.success} />
+                <FontAwesome6
+                  name={gpsLockedAtShutter ? 'lock' : 'location-crosshairs'}
+                  size={14}
+                  color={colors.success}
+                />
               )}
               <Text style={[styles.gpsStatusText, { color: colors.text }]}>
-                {gpsLoading ? 'Capturando GPS exato...' : 'Localização GPS confirmada'}
+                {gpsLoading
+                  ? gpsLockedAtShutter
+                    ? 'Localização GPS travada na foto — buscando endereço...'
+                    : 'Capturando GPS exato...'
+                  : gpsLockedAtShutter
+                    ? 'Localização GPS travada no momento da foto'
+                    : 'Localização GPS confirmada'}
               </Text>
             </View>
 
@@ -321,7 +358,7 @@ export function NewReportModal({
             <View style={styles.fieldGroup}>
               <View style={styles.labelRow}>
                 <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
-                  Comentário sobre o buraco *
+                  Comentário sobre o buraco (opcional)
                 </Text>
                 <Text
                   style={[
@@ -335,7 +372,7 @@ export function NewReportModal({
               <TextInput
                 value={comment}
                 onChangeText={setComment}
-                placeholder="Ex.: Buraco fundo na faixa da direita próximo ao meio-fio"
+                placeholder="Opcional: descreva tamanho, faixa ou ponto de atenção na via"
                 placeholderTextColor={colors.textMuted}
                 multiline
                 maxLength={280}

@@ -8,6 +8,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -24,6 +25,10 @@ import { PotholeCameraModal } from '../components/PotholeCameraModal';
 import { PotholeDetailModal } from '../components/PotholeDetailModal';
 import { useAppSettings } from '../context/AppSettingsContext';
 import { recordDiagnosticEvent } from '../services/diagnosticLogService';
+import {
+  fetchUnreadNotifications,
+  markNotificationRead,
+} from '../services/notificationService';
 import { deletePotholePhotos } from '../services/potholeMediaService';
 import { potholeRepository } from '../services/potholeRepository';
 import { generateSeedPotholes } from '../services/potholeSeedService';
@@ -103,6 +108,7 @@ export function MapHomeScreen({
     cardShadow,
     typography,
     defaultAnonymous,
+    dataRefreshToken,
   } = useAppSettings();
 
   const leafletMapRef = useRef(null);
@@ -131,10 +137,26 @@ export function MapHomeScreen({
   const [cameraModalVisible, setCameraModalVisible] = useState(false);
   const [cameraContext, setCameraContext] = useState({ mode: 'new_report' });
   const [webOnlyModalVisible, setWebOnlyModalVisible] = useState(false);
+  const [unreadNotifications, setUnreadNotifications] = useState([]);
+  const [notificationsVisible, setNotificationsVisible] = useState(false);
+  const [openingNotificationId, setOpeningNotificationId] = useState(null);
 
   const [newReportModalVisible, setNewReportModalVisible] = useState(false);
   const [draftMedia, setDraftMedia] = useState(null);
   const [pendingVerificationDraft, setPendingVerificationDraft] = useState(null);
+
+  const refreshNotifications = useCallback(async () => {
+    if (!session?.userId || session?.isDemo) {
+      setUnreadNotifications([]);
+      return;
+    }
+    const list = await fetchUnreadNotifications(session.userId);
+    setUnreadNotifications(Array.isArray(list) ? list : []);
+  }, [session?.userId, session?.isDemo]);
+
+  useEffect(() => {
+    refreshNotifications();
+  }, [refreshNotifications, dataRefreshToken]);
 
   useEffect(() => {
     isDemoRef.current = Boolean(session?.isDemo);
@@ -429,7 +451,43 @@ export function MapHomeScreen({
       showSpinner: true,
       anchorCoords: userCoordsRef.current,
     });
-  }, [isRefreshing, syncPotholesForBounds]);
+    refreshNotifications();
+  }, [isRefreshing, syncPotholesForBounds, refreshNotifications]);
+
+  const handleOpenNotification = useCallback(
+    async (item) => {
+      if (!item?.pothole_id || openingNotificationId) return;
+      setOpeningNotificationId(item.id);
+      try {
+        await markNotificationRead(item.id);
+        setUnreadNotifications((prev) => prev.filter((n) => n.id !== item.id));
+
+        let target = potholes.find((p) => p.id === item.pothole_id) || null;
+        if (!target) {
+          target = await potholeRepository.getReportById(item.pothole_id);
+          if (target) {
+            setPotholes((prev) =>
+              prev.some((p) => p.id === target.id) ? prev : [target, ...prev]
+            );
+          }
+        }
+
+        setNotificationsVisible(false);
+
+        if (target) {
+          leafletMapRef.current?.centerOn(target.latitude, target.longitude, 17);
+          setSelectedPothole(target);
+          setPendingVerificationDraft(null);
+          setTimeout(() => {
+            setDetailModalVisible(true);
+          }, Platform.OS === 'web' ? 40 : 160);
+        }
+      } finally {
+        setOpeningNotificationId(null);
+      }
+    },
+    [openingNotificationId, potholes]
+  );
 
   const handleMarkerPressById = useCallback(
     (markerId) => {
@@ -635,6 +693,37 @@ export function MapHomeScreen({
               ) : (
                 <FontAwesome6 name="rotate" size={15} color={colors.primary} />
               )}
+            </Pressable>
+          ) : null}
+
+          {session && !session.isDemo ? (
+            <Pressable
+              onPress={() => {
+                refreshNotifications();
+                setNotificationsVisible(true);
+              }}
+              accessibilityLabel="Abrir Notificações"
+              style={[
+                styles.iconActionBtn,
+                {
+                  backgroundColor:
+                    unreadNotifications.length > 0 ? colors.accentSoft : colors.surfaceMuted,
+                  borderRadius: radiusButton,
+                },
+              ]}
+            >
+              <FontAwesome6
+                name="bell"
+                size={15}
+                color={unreadNotifications.length > 0 ? colors.primary : colors.text}
+              />
+              {unreadNotifications.length > 0 ? (
+                <View style={[styles.notifBadge, { backgroundColor: colors.danger }]}>
+                  <Text style={styles.notifBadgeText}>
+                    {unreadNotifications.length > 9 ? '9+' : unreadNotifications.length}
+                  </Text>
+                </View>
+              ) : null}
             </Pressable>
           ) : null}
 
@@ -1004,6 +1093,7 @@ export function MapHomeScreen({
 
       <PotholeCameraModal
         visible={cameraModalVisible}
+        fallbackCoords={userCoords}
         guideText={cameraGuideText}
         previewTitle={cameraPreviewTitle}
         onClose={handleCameraClose}
@@ -1037,9 +1127,121 @@ export function MapHomeScreen({
         onStartVerification={handleStartVerification}
         onCancelVerificationDraft={() => setPendingVerificationDraft(null)}
         onVerificationSaved={handleVerificationSaved}
+        onAuthorReviewCompleted={refreshNotifications}
         onAdminPotholeDeleted={handleAdminPotholeDeleted}
         onAdminUpdateDeleted={handleAdminUpdateDeleted}
       />
+
+      <Modal
+        visible={notificationsVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setNotificationsVisible(false)}
+      >
+        <View style={[styles.webNoticeOverlay, { backgroundColor: colors.overlay }]}>
+          <View
+            style={[
+              SharedStyles.contentContainer,
+              styles.notifSheetCard,
+              cardShadow,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                borderWidth,
+                borderRadius: radiusCard,
+                maxHeight: Platform.OS === 'web' ? '88dvh' : '82%',
+              },
+            ]}
+          >
+            <View style={styles.notifHeader}>
+              <View style={styles.notifHeaderLeft}>
+                <FontAwesome6 name="bell" size={16} color={colors.primary} />
+                <Text style={[styles.notifTitle, { color: colors.text }]}>
+                  Notificações ({unreadNotifications.length})
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => setNotificationsVisible(false)}
+                hitSlop={10}
+                accessibilityLabel="Fechar notificações"
+                style={[styles.notifCloseBtn, { backgroundColor: colors.surfaceMuted }]}
+              >
+                <FontAwesome6 name="xmark" size={15} color={colors.text} />
+              </Pressable>
+            </View>
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.notifListContent}
+            >
+              {unreadNotifications.length === 0 ? (
+                <View
+                  style={[
+                    styles.notifEmptyBox,
+                    {
+                      backgroundColor: colors.surfaceMuted,
+                      borderColor: colors.border,
+                      borderWidth: 1,
+                      borderRadius: radiusCard,
+                    },
+                  ]}
+                >
+                  <FontAwesome6 name="circle-check" size={20} color={colors.success} />
+                  <Text style={[styles.notifEmptyText, { color: colors.textSecondary }]}>
+                    Nenhuma notificação pendente.
+                  </Text>
+                </View>
+              ) : (
+                unreadNotifications.map((item) => (
+                  <Pressable
+                    key={item.id}
+                    onPress={() => handleOpenNotification(item)}
+                    disabled={openingNotificationId === item.id}
+                    style={({ pressed }) => [
+                      styles.notifItemCard,
+                      {
+                        backgroundColor: colors.surfaceMuted,
+                        borderColor: colors.primary,
+                        borderWidth: 1,
+                        borderRadius: radiusCard,
+                        opacity: pressed ? 0.85 : 1,
+                      },
+                    ]}
+                  >
+                    <View style={styles.notifItemTop}>
+                      <View style={[styles.notifTypePill, { backgroundColor: colors.accentSoft }]}>
+                        <FontAwesome6 name="circle-check" size={11} color={colors.primary} />
+                        <Text style={[styles.notifTypeText, { color: colors.primary }]}>
+                          Revisão solicitada
+                        </Text>
+                      </View>
+                      <Text
+                        style={[
+                          styles.notifDate,
+                          { color: colors.textMuted, fontVariant: typography.fontVariant },
+                        ]}
+                      >
+                        {item.createdAtFormatted}
+                      </Text>
+                    </View>
+                    <Text style={[styles.notifItemTitle, { color: colors.text }]}>
+                      {item.title}
+                    </Text>
+                    <Text style={[styles.notifItemBody, { color: colors.textSecondary }]}>
+                      {item.body}
+                    </Text>
+                    <Text style={[styles.notifItemAction, { color: colors.primary }]}>
+                      {openingNotificationId === item.id
+                        ? 'Abrindo relato...'
+                        : 'Toque para abrir e avaliar'}
+                    </Text>
+                  </Pressable>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={webOnlyModalVisible}
@@ -1170,6 +1372,100 @@ const styles = StyleSheet.create({
     height: 38,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  notifBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notifBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  notifSheetCard: {
+    padding: 18,
+    gap: 12,
+    width: '100%',
+  },
+  notifHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  notifHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  notifTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  notifCloseBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notifListContent: {
+    gap: 10,
+    paddingBottom: 6,
+  },
+  notifEmptyBox: {
+    padding: 20,
+    alignItems: 'center',
+    gap: 8,
+  },
+  notifEmptyText: {
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  notifItemCard: {
+    padding: 13,
+    gap: 6,
+  },
+  notifItemTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  notifTypePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    gap: 5,
+  },
+  notifTypeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  notifDate: {
+    fontSize: 11,
+  },
+  notifItemTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  notifItemBody: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  notifItemAction: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 2,
   },
   filterBarWrapper: {
     position: 'absolute',

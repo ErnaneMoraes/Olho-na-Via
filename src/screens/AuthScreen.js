@@ -6,7 +6,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   View,
@@ -21,7 +20,7 @@ import { recordAppErrorLog } from '../services/diagnosticLogService';
 
 export function AuthScreen({ onAuthenticated, initialMode = 'login' }) {
   const insets = useSafeAreaInsets();
-  const { colors, radiusCard, radiusInput, borderWidth, cardShadow, typography } =
+  const { colors, isDark, toggleDarkMode, radiusCard, radiusInput, borderWidth, cardShadow, typography } =
     useAppSettings();
 
   const [mode, setMode] = useState(initialMode === 'register' ? 'register' : 'login'); // 'login' | 'register'
@@ -120,12 +119,37 @@ export function AuthScreen({ onAuthenticated, initialMode = 'login' }) {
       style={[styles.root, { backgroundColor: colors.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
+      <Pressable
+        onPress={toggleDarkMode}
+        hitSlop={10}
+        accessibilityRole="button"
+        accessibilityLabel={isDark ? 'Ativar Modo Claro' : 'Ativar Modo Escuro'}
+        style={({ pressed }) => [
+          styles.themeToggleBtn,
+          cardShadow,
+          {
+            top: Math.max(14, insets.top + 8),
+            right: 16,
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+            borderWidth,
+            opacity: pressed ? 0.85 : 1,
+          },
+        ]}
+      >
+        <FontAwesome6
+          name={isDark ? 'sun' : 'moon'}
+          size={17}
+          color={isDark ? colors.warning : colors.primary}
+        />
+      </Pressable>
+
       <ScrollView
         contentContainerStyle={[
           SharedStyles.contentContainer,
           styles.scrollContent,
           {
-            paddingTop: Math.max(24, insets.top + 16),
+            paddingTop: Math.max(58, insets.top + 48),
             paddingBottom: Math.max(24, insets.bottom + 16),
           },
         ]}
@@ -326,13 +350,17 @@ export function AuthScreen({ onAuthenticated, initialMode = 'login' }) {
           ) : (
             <Pressable
               onPress={() => setRememberMe((v) => !v)}
-              style={[
+              accessibilityRole="switch"
+              accessibilityState={{ checked: rememberMe }}
+              accessibilityLabel="Lembrar-me"
+              style={({ pressed }) => [
                 styles.rememberRow,
                 {
                   backgroundColor: colors.surfaceMuted,
-                  borderColor: colors.border,
+                  borderColor: rememberMe ? '#1A73E8' : colors.border,
                   borderWidth: 1,
                   borderRadius: radiusInput,
+                  opacity: pressed ? 0.9 : 1,
                 },
               ]}
             >
@@ -342,12 +370,34 @@ export function AuthScreen({ onAuthenticated, initialMode = 'login' }) {
                   Manter e-mail e sessão salvos neste dispositivo
                 </Text>
               </View>
-              <Switch
-                value={rememberMe}
-                onValueChange={setRememberMe}
-                trackColor={{ false: colors.borderStrong, true: colors.primarySoft }}
-                thumbColor={rememberMe ? colors.primary : colors.textMuted}
-              />
+              <View
+                style={[
+                  styles.customToggleTrack,
+                  {
+                    backgroundColor: rememberMe
+                      ? '#1A73E8'
+                      : isDark
+                        ? '#475569'
+                        : '#CBD5E1',
+                    borderColor: rememberMe
+                      ? '#1A73E8'
+                      : isDark
+                        ? '#64748B'
+                        : '#94A3B8',
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.customToggleThumb,
+                    {
+                      alignSelf: rememberMe ? 'flex-end' : 'flex-start',
+                    },
+                  ]}
+                >
+                  {rememberMe ? <FontAwesome6 name="check" size={11} color="#1A73E8" /> : null}
+                </View>
+              </View>
             </Pressable>
           )}
 
@@ -404,6 +454,15 @@ export function AuthScreen({ onAuthenticated, initialMode = 'login' }) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+  },
+  themeToggleBtn: {
+    position: 'absolute',
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
   },
   scrollContent: {
     flexGrow: 1,
@@ -500,6 +559,22 @@ const styles = StyleSheet.create({
   rememberSubtitle: {
     fontSize: 11,
     lineHeight: 15,
+  },
+  customToggleTrack: {
+    width: 48,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    paddingHorizontal: 2,
+    justifyContent: 'center',
+  },
+  customToggleThumb: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   errorBanner: {
     flexDirection: 'row',

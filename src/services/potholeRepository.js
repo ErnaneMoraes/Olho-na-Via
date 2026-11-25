@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { canCapturePotholePhotos } from '../utils/devicePlatform';
 import { recordDiagnosticEvent } from './diagnosticLogService';
+import { notifyRepairSubmitted } from './notificationService';
 import {
   cacheRemoteThumbnail,
   deletePotholePhotos,
@@ -151,9 +152,6 @@ export const LocalAsyncStoragePotholeAdapter = {
     }
 
     const cleanComment = String(comment || '').trim();
-    if (cleanComment.length < 5) {
-      throw createRepositoryError('Descreva o problema com pelo menos 5 caracteres.');
-    }
 
     if (!thumbUri || !fullUri) {
       throw createRepositoryError('A foto do buraco é obrigatória para publicar o relato.');
@@ -301,6 +299,11 @@ export const LocalAsyncStoragePotholeAdapter = {
     return updatedPothole;
   },
 
+  async getReportById(potholeId) {
+    const current = await this.listReports();
+    return current.find((item) => item.id === potholeId) || null;
+  },
+
   async deleteReport(id, { isDemoSession = false } = {}) {
     assertNotDemoSession(isDemoSession);
     const current = await this.listReports();
@@ -442,9 +445,6 @@ export const SupabasePotholeAdapter = {
     }
 
     const cleanComment = String(comment || '').trim();
-    if (cleanComment.length < 5) {
-      throw createRepositoryError('Descreva o problema com pelo menos 5 caracteres.');
-    }
 
     if (!thumbUri && !thumbBase64) {
       throw createRepositoryError('A foto do buraco é obrigatória para publicar o relato.');
@@ -621,11 +621,60 @@ export const SupabasePotholeAdapter = {
       isAnonymous: anonymousFlag,
     });
 
+    if (nextStatus === 'fixed') {
+      await notifyRepairSubmitted({
+        pothole: {
+          ...updatedRow,
+          authorUserId: updatedRow.user_id || currentPothole?.authorUserId || null,
+          streetAddress: updatedRow.street_address || currentPothole?.streetAddress || '',
+        },
+        updateId: insertedUpdate.id,
+        actorUserId: activeUserId,
+      });
+    }
+
     return mapCloudPotholeRow(
       updatedRow,
       [mappedEntry, ...previousVerifications],
       uploaded.cachedThumbUri
     );
+  },
+
+  async getReportById(potholeId) {
+    if (!potholeId) return null;
+    if (!isSupabaseConfigured()) {
+      return LocalAsyncStoragePotholeAdapter.getReportById(potholeId);
+    }
+
+    try {
+      const { data: row, error } = await supabase
+        .from('potholes')
+        .select(
+          'id, user_id, author_nickname, is_anonymous, latitude, longitude, street_address, comment, status, thumb_url, full_url, confirmations, created_at'
+        )
+        .eq('id', potholeId)
+        .single();
+
+      if (error || !row) {
+        return LocalAsyncStoragePotholeAdapter.getReportById(potholeId);
+      }
+
+      const { data: updateRows } = await supabase
+        .from('pothole_updates')
+        .select(
+          'id, pothole_id, user_id, author_nickname, is_anonymous, status, note, thumb_url, full_url, created_at'
+        )
+        .eq('pothole_id', potholeId)
+        .order('created_at', { ascending: false });
+
+      const mappedUpdates = Array.isArray(updateRows)
+        ? await Promise.all(updateRows.map((u) => mapCloudVerificationRow(u)))
+        : [];
+
+      return mapCloudPotholeRow(row, mappedUpdates);
+    } catch {
+      return LocalAsyncStoragePotholeAdapter.getReportById(potholeId);
+    }
   },
 
   async deleteReport(id, options = {}) {
@@ -642,6 +691,7 @@ export const SupabasePotholeAdapter = {
 export function createPotholeRepository(adapter) {
   return {
     listReports: (options) => adapter.listReports(options),
+    getReportById: (potholeId) => adapter.getReportById(potholeId),
     applySeedOverrides: (seedList) => adapter.applySeedOverrides(seedList),
     createReport: (payload) => adapter.createReport(payload),
     createPothole: (payload) => adapter.createReport(payload),

@@ -1,5 +1,6 @@
 import { FontAwesome6 } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as Location from 'expo-location';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -27,10 +28,103 @@ import { deleteTempPhoto } from '../services/potholeMediaService';
 import { canCapturePotholePhotos } from '../utils/devicePlatform';
 import { PhotoReviewModal } from './PhotoReviewModal';
 
+const SHUTTER_GPS_TIMEOUT_MS = 8000;
+
+function normalizeFallbackCoords(fallbackCoords) {
+  if (
+    fallbackCoords &&
+    Number.isFinite(fallbackCoords.latitude) &&
+    Number.isFinite(fallbackCoords.longitude)
+  ) {
+    return {
+      latitude: fallbackCoords.latitude,
+      longitude: fallbackCoords.longitude,
+      accuracy: Number.isFinite(fallbackCoords.accuracy) ? fallbackCoords.accuracy : null,
+      capturedAt: new Date().toISOString(),
+      isFallback: true,
+    };
+  }
+  return null;
+}
+
+async function captureFreshShutterCoords(fallbackCoords) {
+  const capturedAt = new Date().toISOString();
+
+  if (Platform.OS === 'web') {
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      try {
+        const pos = await new Promise((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(
+            (res) => resolve(res),
+            (err) => reject(err),
+            {
+              enableHighAccuracy: true,
+              maximumAge: 0,
+              timeout: SHUTTER_GPS_TIMEOUT_MS,
+            }
+          );
+        });
+        if (
+          pos?.coords &&
+          Number.isFinite(pos.coords.latitude) &&
+          Number.isFinite(pos.coords.longitude)
+        ) {
+          return {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            accuracy: Number.isFinite(pos.coords.accuracy) ? pos.coords.accuracy : null,
+            capturedAt,
+            isFallback: false,
+          };
+        }
+      } catch {
+        // Retorna fallback se Web Geolocation falhar ou exceder tempo limite
+      }
+    }
+    return normalizeFallbackCoords(fallbackCoords);
+  }
+
+  try {
+    let permissionStatus = (await Location.getForegroundPermissionsAsync())?.status;
+    if (permissionStatus !== 'granted') {
+      permissionStatus = (await Location.requestForegroundPermissionsAsync())?.status;
+    }
+    if (permissionStatus === 'granted') {
+      const freshPos = await Promise.race([
+        Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+        }),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('SHUTTER_GPS_TIMEOUT')), SHUTTER_GPS_TIMEOUT_MS)
+        ),
+      ]);
+
+      if (
+        freshPos?.coords &&
+        Number.isFinite(freshPos.coords.latitude) &&
+        Number.isFinite(freshPos.coords.longitude)
+      ) {
+        return {
+          latitude: freshPos.coords.latitude,
+          longitude: freshPos.coords.longitude,
+          accuracy: Number.isFinite(freshPos.coords.accuracy) ? freshPos.coords.accuracy : null,
+          capturedAt,
+          isFallback: false,
+        };
+      }
+    }
+  } catch {
+    // Usa última coordenada conhecida como fallback caso o GPS demore no clique
+  }
+
+  return normalizeFallbackCoords(fallbackCoords);
+}
+
 export function PotholeCameraModal({
   visible,
   onClose,
   onPhotoConfirmed,
+  fallbackCoords = null,
   guideText = 'Enquadre o buraco na via',
   previewTitle = 'Revisar Foto do Buraco',
 }) {
@@ -89,10 +183,13 @@ export function PotholeCameraModal({
     setErrorMsg('');
     setIsCapturing(true);
     try {
-      const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.85,
-        ...(isWeb ? {} : { shutterSound: Boolean(settings?.cameraShutterSound) }),
-      });
+      const [photo, freshCoords] = await Promise.all([
+        cameraRef.current.takePictureAsync({
+          quality: 0.85,
+          ...(isWeb ? {} : { shutterSound: Boolean(settings?.cameraShutterSound) }),
+        }),
+        captureFreshShutterCoords(fallbackCoords),
+      ]);
       if (!photo?.uri) {
         setErrorMsg('Não foi possível capturar a foto. Tente novamente.');
         return;
@@ -111,7 +208,10 @@ export function PotholeCameraModal({
       }
 
       setIsCameraReady(false);
-      setCapturedPhoto(photo);
+      setCapturedPhoto({
+        ...photo,
+        capturedCoords: freshCoords || normalizeFallbackCoords(fallbackCoords),
+      });
     } catch (err) {
       await recordAppErrorLog('PotholeCameraModal.capture', err);
       setErrorMsg('Erro ao acionar a câmera. Tente novamente.');

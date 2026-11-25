@@ -34,8 +34,10 @@ import {
   formatAdminRealAuthorLabel,
 } from '../services/adminService';
 import { reverseGeocodeCoordinate } from '../services/geocodingService';
+import { submitRepairAuthorReview } from '../services/notificationService';
 import { deletePotholePhotos } from '../services/potholeMediaService';
 import { potholeRepository } from '../services/potholeRepository';
+import { formatDateTimePtBr } from '../services/potholeSeedService';
 
 function notifyUser(title, message) {
   if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.alert === 'function') {
@@ -91,6 +93,7 @@ export function PotholeDetailModal({
   onStartVerification,
   onCancelVerificationDraft,
   onVerificationSaved,
+  onAuthorReviewCompleted,
   onAdminPotholeDeleted,
   onAdminUpdateDeleted,
 }) {
@@ -131,6 +134,9 @@ export function PotholeDetailModal({
   const [isAnonymous, setIsAnonymous] = useState(Boolean(initialAnonymous));
   const [savingVerification, setSavingVerification] = useState(false);
   const [verificationError, setVerificationError] = useState('');
+  const [submittingAuthorReview, setSubmittingAuthorReview] = useState(false);
+  const [authorReviewFeedback, setAuthorReviewFeedback] = useState('');
+  const [authorReviewError, setAuthorReviewError] = useState('');
   const [adminBusy, setAdminBusy] = useState(false);
   const [adminIdentities, setAdminIdentities] = useState({});
   const [anonToastMsg, setAnonToastMsg] = useState('');
@@ -158,8 +164,13 @@ export function PotholeDetailModal({
   }, []);
 
   useEffect(() => {
-    savingRef.current = savingVerification || adminBusy;
-  }, [savingVerification, adminBusy]);
+    savingRef.current = savingVerification || adminBusy || submittingAuthorReview;
+  }, [savingVerification, adminBusy, submittingAuthorReview]);
+
+  useEffect(() => {
+    setAuthorReviewFeedback('');
+    setAuthorReviewError('');
+  }, [pothole?.id, visible]);
 
   useEffect(() => {
     if (visible) {
@@ -456,11 +467,72 @@ export function PotholeDetailModal({
     );
   };
 
+  const handleRepairAuthorReview = async (approved) => {
+    if (!pothole || submittingAuthorReview || savingVerification) return;
+    setAuthorReviewError('');
+    setAuthorReviewFeedback('');
+    setSubmittingAuthorReview(true);
+    try {
+      const reviewRes = await submitRepairAuthorReview({
+        pothole,
+        approved,
+        authorNickname: session?.nickname || 'Autor do relato',
+      });
+
+      let refreshed = await potholeRepository.getReportById(pothole.id);
+      if (!refreshed) {
+        const nextStatus = reviewRes.status;
+        const entry = {
+          id: reviewRes.updateId || `rev_${Date.now()}`,
+          status: nextStatus,
+          statusLabel: nextStatus === 'fixed' ? 'Já foi Tampado' : 'Continua Aberto',
+          note: reviewRes.note,
+          isAnonymous: false,
+          authorNickname: session?.nickname || 'Autor do relato',
+          authorUserId: session?.userId || null,
+          thumbUri: null,
+          fullUri: null,
+          createdAt: formatDateTimePtBr(reviewRes.createdAt),
+          createdAtIso: reviewRes.createdAt,
+        };
+        refreshed = {
+          ...pothole,
+          status: nextStatus,
+          statusLabel: nextStatus === 'fixed' ? 'Tampado' : 'Aberto',
+          verifications: [entry, ...(Array.isArray(pothole.verifications) ? pothole.verifications : [])],
+        };
+      }
+
+      notifyDataRestored();
+      onVerificationSaved?.(refreshed);
+      onAuthorReviewCompleted?.();
+
+      const successText = approved
+        ? 'Correção aprovada! O relato segue confirmado como tampado.'
+        : 'Relato reaberto no mapa! A comunidade foi informada que o buraco continua aberto.';
+      setAuthorReviewFeedback(successText);
+    } catch (err) {
+      setAuthorReviewError(
+        err?.message || 'Não foi possível registrar sua avaliação da correção.'
+      );
+    } finally {
+      setSubmittingAuthorReview(false);
+    }
+  };
+
   if (!pothole) {
     return null;
   }
 
   const canModerateCloud = Boolean(session?.isAdmin && pothole?.isCloudReport);
+  const canReviewRepair = Boolean(
+    session &&
+      !session.isDemo &&
+      pothole?.isCloudReport &&
+      pothole?.authorUserId &&
+      pothole.authorUserId === session.userId &&
+      pothole.status === 'fixed'
+  );
 
   const isFixed = pothole.status === 'fixed';
   const statusColor = isFixed ? colors.success : colors.danger;
@@ -713,7 +785,9 @@ export function PotholeDetailModal({
                 </View>
 
                 <Text style={[styles.commentText, { color: colors.textSecondary }]}>
-                  {pothole.comment}
+                  {pothole.comment?.trim()
+                    ? pothole.comment
+                    : 'Relato registrado com foto e localização georreferenciada.'}
                 </Text>
 
                 <View style={[styles.metaFooter, { borderTopColor: colors.dividerColor }]}>
@@ -728,6 +802,83 @@ export function PotholeDetailModal({
                   </Text>
                 </View>
               </View>
+
+              {/* Cartão de avaliação pelo autor original quando alguém marca como Tampado */}
+              {authorReviewFeedback ? (
+                <View
+                  style={[
+                    styles.sectionCard,
+                    cardShadow,
+                    {
+                      backgroundColor: colors.successSoft,
+                      borderColor: colors.success,
+                      borderWidth: 1,
+                      borderRadius: radiusCard,
+                    },
+                  ]}
+                >
+                  <View style={styles.timelineHeaderRow}>
+                    <FontAwesome6 name="circle-check" size={16} color={colors.success} />
+                    <Text style={[styles.sectionTitle, { color: colors.success }]}>
+                      Avaliação Registrada
+                    </Text>
+                  </View>
+                  <Text style={[styles.helperText, { color: colors.text }]}>
+                    {authorReviewFeedback}
+                  </Text>
+                </View>
+              ) : null}
+
+              {canReviewRepair ? (
+                <View
+                  style={[
+                    styles.sectionCard,
+                    cardShadow,
+                    {
+                      backgroundColor: colors.accentSoft,
+                      borderColor: colors.primary,
+                      borderWidth: 1.5,
+                      borderRadius: radiusCard,
+                    },
+                  ]}
+                >
+                  <View style={styles.timelineHeaderRow}>
+                    <FontAwesome6 name="bell" size={15} color={colors.primary} />
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                      Avaliar Correção Informada
+                    </Text>
+                  </View>
+                  <Text style={[styles.helperText, { color: colors.textSecondary }]}>
+                    Alguém informou que este buraco foi tampado. Você, como autor do relato, pode
+                    confirmar a correção ou reabrir o relato caso o problema continue.
+                  </Text>
+                  {authorReviewError ? (
+                    <Text style={[styles.errorText, { color: colors.danger }]}>
+                      {authorReviewError}
+                    </Text>
+                  ) : null}
+                  <View style={styles.actionRow}>
+                    <SaveButton
+                      compact
+                      label="Aprovar Correção"
+                      icon="circle-check"
+                      loading={submittingAuthorReview}
+                      disabled={submittingAuthorReview || savingVerification}
+                      onPress={() => handleRepairAuthorReview(true)}
+                      style={styles.flexOne}
+                    />
+                    <DangerButton
+                      compact
+                      label="Não foi tampado (Reabrir)"
+                      icon="rotate-left"
+                      loading={submittingAuthorReview}
+                      disabled={submittingAuthorReview || savingVerification}
+                      onPress={() => handleRepairAuthorReview(false)}
+                      style={styles.flexOne}
+                    />
+                  </View>
+                </View>
+              ) : null}
 
               {/* Fluxo de Verificação Comunitária */}
               {session?.isDemo ? (

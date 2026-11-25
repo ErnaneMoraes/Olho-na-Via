@@ -244,6 +244,7 @@ export function PhotoReviewModal({
         setProcessing(false);
         onPhotoApproved?.({
           ...processed,
+          capturedCoords: photo?.capturedCoords || null,
           privacyConfirmed: true,
           redactionsCount: redactionBars.length,
         });
@@ -264,6 +265,7 @@ export function PhotoReviewModal({
         html: buildRedactionCanvasHtml(normalized.base64, redactionBars),
         rawUriToClean: photo.uri,
         barsCount: redactionBars.length,
+        capturedCoords: photo?.capturedCoords || null,
       });
     } catch (err) {
       await recordAppErrorLog('PhotoReviewModal.confirm', err);
@@ -292,6 +294,7 @@ export function PhotoReviewModal({
       setProcessing(false);
       onPhotoApproved?.({
         ...processed,
+        capturedCoords: taskSnapshot.capturedCoords || null,
         privacyConfirmed: true,
         redactionsCount: taskSnapshot.barsCount,
       });

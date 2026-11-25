@@ -35,7 +35,7 @@ create table if not exists public.potholes (
   latitude double precision not null,
   longitude double precision not null,
   street_address text not null,
-  comment text not null check (char_length(trim(comment)) >= 5),
+  comment text not null default '',
   status text not null default 'open' check (status in ('open', 'fixed')),
   thumb_url text not null,
   full_url text not null,
@@ -45,6 +45,12 @@ create table if not exists public.potholes (
 
 alter table public.potholes
   drop constraint if exists potholes_lgpd_anonymous_check;
+
+alter table public.potholes
+  drop constraint if exists potholes_comment_check;
+
+alter table public.potholes
+  alter column comment set default '';
 
 create index if not exists idx_potholes_lat_lng
   on public.potholes (latitude, longitude);
@@ -82,10 +88,16 @@ create table if not exists public.pothole_updates (
   is_anonymous boolean not null default false,
   status text not null check (status in ('open', 'fixed')),
   note text default '',
-  thumb_url text not null,
-  full_url text not null,
+  thumb_url text,
+  full_url text,
   created_at timestamptz not null default now()
 );
+
+alter table public.pothole_updates
+  alter column thumb_url drop not null;
+
+alter table public.pothole_updates
+  alter column full_url drop not null;
 
 alter table public.pothole_updates
   drop constraint if exists pothole_updates_lgpd_anonymous_check;
@@ -313,3 +325,46 @@ $$;
 
 revoke all on function public.admin_reset_user_password(uuid, text) from public;
 grant execute on function public.admin_reset_user_password(uuid, text) to authenticated;
+
+-- 7. Notificações no App (Revisão de Correção pelo Autor)
+create table if not exists public.user_notifications (
+  id uuid primary key default gen_random_uuid(),
+  recipient_user_id uuid not null references auth.users(id) on delete cascade,
+  actor_user_id uuid references auth.users(id) on delete set null,
+  pothole_id uuid not null references public.potholes(id) on delete cascade,
+  pothole_update_id uuid references public.pothole_updates(id) on delete set null,
+  type text not null default 'repair_review_requested',
+  title text not null,
+  body text not null,
+  is_read boolean not null default false,
+  review_decision text check (review_decision in ('approved', 'rejected')),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_user_notifications_recipient_unread
+  on public.user_notifications (recipient_user_id, is_read, created_at desc);
+
+alter table public.user_notifications enable row level security;
+
+drop policy if exists "Recipients can view own notifications" on public.user_notifications;
+create policy "Recipients can view own notifications"
+  on public.user_notifications for select
+  to authenticated
+  using (auth.uid() = recipient_user_id);
+
+drop policy if exists "Recipients can update own notifications" on public.user_notifications;
+create policy "Recipients can update own notifications"
+  on public.user_notifications for update
+  to authenticated
+  using (auth.uid() = recipient_user_id)
+  with check (auth.uid() = recipient_user_id);
+
+drop policy if exists "Authenticated users can notify repair review" on public.user_notifications;
+create policy "Authenticated users can notify repair review"
+  on public.user_notifications for insert
+  to authenticated
+  with check (
+    auth.uid() = actor_user_id
+    and recipient_user_id is not null
+    and recipient_user_id <> auth.uid()
+  );
