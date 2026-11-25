@@ -7,6 +7,7 @@ import { CancelButton, DangerButton, PrimaryButton, SecondaryButton } from './Bu
 
 export function ConfirmModal({
   visible,
+  inline = false,
   title,
   message,
   icon = 'circle-info',
@@ -22,75 +23,88 @@ export function ConfirmModal({
   const insets = useSafeAreaInsets();
   const { colors, radiusCard, borderWidth, cardShadow } = useAppSettings();
 
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+  if (inline && !visible) {
+    return null;
+  }
+
+  const content = (
+    <View
+      style={[
+        styles.backdrop,
+        inline ? styles.inlineOverlay : null,
+        {
+          backgroundColor: colors.overlay,
+          paddingTop: Math.max(20, insets.top),
+          paddingBottom: Math.max(20, insets.bottom),
+        },
+      ]}
+    >
+      <Pressable style={StyleSheet.absoluteFill} onPress={onCancel} />
       <View
         style={[
-          styles.backdrop,
+          styles.card,
+          cardShadow,
           {
-            backgroundColor: colors.overlay,
-            paddingTop: Math.max(20, insets.top),
-            paddingBottom: Math.max(20, insets.bottom),
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+            borderWidth,
+            borderRadius: radiusCard,
           },
         ]}
       >
-        <Pressable style={StyleSheet.absoluteFill} onPress={onCancel} />
         <View
           style={[
-            styles.card,
-            cardShadow,
-            {
-              backgroundColor: colors.card,
-              borderColor: colors.border,
-              borderWidth,
-              borderRadius: radiusCard,
-            },
+            styles.iconWrap,
+            { backgroundColor: danger ? colors.dangerSoft : colors.accentSoft },
           ]}
         >
-          <View
-            style={[
-              styles.iconWrap,
-              { backgroundColor: danger ? colors.dangerSoft : colors.accentSoft },
-            ]}
-          >
-            <FontAwesome6
-              name={icon}
-              size={22}
-              color={danger ? colors.danger : colors.primary}
-            />
-          </View>
+          <FontAwesome6
+            name={icon}
+            size={22}
+            color={danger ? colors.danger : colors.primary}
+          />
+        </View>
 
-          <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
-          {message ? (
-            <Text style={[styles.message, { color: colors.textSecondary }]}>{message}</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
+        {message ? (
+          <Text style={[styles.message, { color: colors.textSecondary }]}>{message}</Text>
+        ) : null}
+
+        <View style={styles.actions}>
+          {secondaryLabel && onSecondaryPress ? (
+            <SecondaryButton label={secondaryLabel} onPress={onSecondaryPress} />
           ) : null}
 
-          <View style={styles.actions}>
-            {secondaryLabel && onSecondaryPress ? (
-              <SecondaryButton label={secondaryLabel} onPress={onSecondaryPress} />
+          <View style={styles.rowActions}>
+            {!hideCancel ? (
+              <CancelButton label={cancelLabel} onPress={onCancel} style={styles.flexButton} />
             ) : null}
-
-            <View style={styles.rowActions}>
-              {!hideCancel ? (
-                <CancelButton label={cancelLabel} onPress={onCancel} style={styles.flexButton} />
-              ) : null}
-              {danger ? (
-                <DangerButton
-                  label={confirmLabel}
-                  onPress={onConfirm}
-                  style={styles.flexButton}
-                />
-              ) : (
-                <PrimaryButton
-                  label={confirmLabel}
-                  onPress={onConfirm}
-                  style={styles.flexButton}
-                />
-              )}
-            </View>
+            {danger ? (
+              <DangerButton
+                label={confirmLabel}
+                onPress={onConfirm}
+                style={styles.flexButton}
+              />
+            ) : (
+              <PrimaryButton
+                label={confirmLabel}
+                onPress={onConfirm}
+                style={styles.flexButton}
+              />
+            )}
           </View>
         </View>
       </View>
+    </View>
+  );
+
+  if (inline) {
+    return content;
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      {content}
     </Modal>
   );
 }
@@ -101,6 +115,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 20,
+  },
+  inlineOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 100,
   },
   card: {
     width: '100%',

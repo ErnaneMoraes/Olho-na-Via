@@ -4,6 +4,27 @@ import { MATERIAL_YOU_DARK_THEME, MATERIAL_YOU_THEME, THEME_IDS } from '../theme
 
 const SETTINGS_STORAGE_KEY = '@olhonavia:settings';
 
+export function getAnonymousModeConfirmationCopy(nextAnonymous) {
+  if (nextAnonymous) {
+    return {
+      title: 'Modo Anônimo',
+      message:
+        "No modo anônimo, seu apelido ficará oculto para o público ('Usuário Anônimo'), mas os administradores do sistema ainda poderão visualizar sua identidade para moderação e prevenção de abusos.",
+      icon: 'user-secret',
+      confirmLabel: 'OK',
+      cancelLabel: 'Cancelar',
+    };
+  }
+  return {
+    title: 'Modo Identificado',
+    message:
+      'Ao desativar o modo anônimo, outros usuários poderão ver seu apelido nas próximas ocorrências e verificações que você publicar.',
+    icon: 'user-check',
+    confirmLabel: 'OK',
+    cancelLabel: 'Cancelar',
+  };
+}
+
 const DEFAULT_SETTINGS = {
   defaultAnonymous: false,
   cameraShutterSound: false,

@@ -18,7 +18,10 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { APP_BUILD_TAG, APP_CHANGELOG, APP_NAME, APP_VERSION } from '../../src/constants/appVersion';
-import { useAppSettings } from '../../src/context/AppSettingsContext';
+import {
+  getAnonymousModeConfirmationCopy,
+  useAppSettings,
+} from '../../src/context/AppSettingsContext';
 import { authService } from '../../src/services/authService';
 import {
   clearDiagnosticLogs,
@@ -31,6 +34,7 @@ import { AdminPanelModal } from '../../src/components/AdminPanelModal';
 import { OnboardingScreen } from '../../src/screens/OnboardingScreen';
 import { SharedStyles } from '../StyleSheet/Styles';
 import { DangerButton, PrimaryButton, SecondaryButton } from '../common/Buttons';
+import { ConfirmModal } from '../common/ConfirmModal';
 
 if (
   Platform.OS === 'android' &&
@@ -113,7 +117,13 @@ function AccordionSection({
   );
 }
 
-export function SettingsModal({ visible, session, onModerationChange, onClose }) {
+export function SettingsModal({
+  visible,
+  session,
+  onSetAnonymousMode,
+  onModerationChange,
+  onClose,
+}) {
   const insets = useSafeAreaInsets();
   const {
     colors,
@@ -134,6 +144,7 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
 
   const [openSection, setOpenSection] = useState(null);
   const [anonToastMsg, setAnonToastMsg] = useState('');
+  const [pendingAnonymousTarget, setPendingAnonymousTarget] = useState(null);
   const anonToastTimerRef = useRef(null);
   const [logs, setLogs] = useState([]);
   const [diagFeedback, setDiagFeedback] = useState('');
@@ -153,6 +164,8 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
   const isCompactWidth = windowWidth < 600;
   const isRealAdmin = Boolean(session?.isAdmin && !session?.isDemo);
   const effectiveIsAdmin = Boolean(isRealAdmin && adminModeEnabled);
+  const currentAnonymousValue =
+    typeof session?.isAnonymousMode === 'boolean' ? session.isAnonymousMode : defaultAnonymous;
 
   useEffect(() => {
     if (!effectiveIsAdmin && showAdminPanel) {
@@ -193,6 +206,7 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
     if (visible) {
       setOpenSection(null);
       setAnonToastMsg('');
+      setPendingAnonymousTarget(null);
       if (effectiveIsAdmin) {
         loadLogs();
       } else {
@@ -481,21 +495,16 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
                         </Text>
                       </View>
                       <Switch
-                        value={defaultAnonymous}
+                        value={currentAnonymousValue}
                         onValueChange={(nextVal) => {
-                          if (nextVal && !defaultAnonymous) {
-                            triggerAnonToast();
-                          } else if (!nextVal) {
-                            setAnonToastMsg('');
-                          }
-                          setDefaultAnonymous(nextVal);
+                          setPendingAnonymousTarget(Boolean(nextVal));
                         }}
                         trackColor={{ false: colors.border, true: colors.primary }}
                         thumbColor="#FFFFFF"
                       />
                     </View>
 
-                    {defaultAnonymous ? (
+                    {currentAnonymousValue ? (
                       <View
                         style={[
                           styles.infoCallout,
@@ -954,13 +963,33 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
       </View>
   );
 
+  const anonConfirmCopy = getAnonymousModeConfirmationCopy(Boolean(pendingAnonymousTarget));
+
+  const handleConfirmAnonymousSwitch = async () => {
+    if (pendingAnonymousTarget === null) return;
+    const nextVal = Boolean(pendingAnonymousTarget);
+    setPendingAnonymousTarget(null);
+    if (nextVal) {
+      triggerAnonToast();
+    } else {
+      setAnonToastMsg('');
+    }
+    if (typeof onSetAnonymousMode === 'function') {
+      await onSetAnonymousMode(nextVal);
+    } else {
+      await setDefaultAnonymous(nextVal);
+    }
+  };
+
   return (
     <Modal
       visible={visible}
       transparent={isWeb}
       animationType={isWeb ? 'fade' : 'slide'}
       onRequestClose={() => {
-        if (showAdminPanel) {
+        if (pendingAnonymousTarget !== null) {
+          setPendingAnonymousTarget(null);
+        } else if (showAdminPanel) {
           setShowAdminPanel(false);
         } else if (showQuickGuide) {
           setShowQuickGuide(false);
@@ -1008,6 +1037,17 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
       ) : (
         settingsBody
       )}
+      <ConfirmModal
+        inline
+        visible={pendingAnonymousTarget !== null}
+        title={anonConfirmCopy.title}
+        message={anonConfirmCopy.message}
+        icon={anonConfirmCopy.icon}
+        confirmLabel={anonConfirmCopy.confirmLabel}
+        cancelLabel={anonConfirmCopy.cancelLabel}
+        onConfirm={handleConfirmAnonymousSwitch}
+        onCancel={() => setPendingAnonymousTarget(null)}
+      />
     </Modal>
   );
 }

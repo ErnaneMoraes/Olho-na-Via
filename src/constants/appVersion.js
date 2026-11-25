@@ -1,8 +1,17 @@
 export const APP_NAME = 'Olho na Via';
-export const APP_VERSION = '1.7.3';
-export const APP_BUILD_TAG = '2026.11.25-clean-admin-moderation-buttons';
+export const APP_VERSION = '1.7.4';
+export const APP_BUILD_TAG = '2026.11.25-anonymous-toggle-confirmation';
 
 export const APP_CHANGELOG = [
+  {
+    version: '1.7.4',
+    date: '25/11/2026',
+    title: 'Confirmação Explícita ao Alternar Modo Anônimo / Identificado',
+    highlights: [
+      'Adicionado diálogo modal de confirmação Material You (compatível com Web e Android) ao alternar entre Modo Anônimo e Modo Identificado pelo atalho no topo do mapa ou nas Configurações.',
+      'Mantida a sincronização imediata entre o indicador do topo do mapa e a preferência em Configurações apenas após confirmação em "OK".',
+    ],
+  },
   {
     version: '1.7.3',
     date: '25/11/2026',

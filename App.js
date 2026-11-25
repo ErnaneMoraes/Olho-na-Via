@@ -13,7 +13,8 @@ import { ONBOARDING_STORAGE_KEY, OnboardingScreen } from './src/screens/Onboardi
 import { authService } from './src/services/authService';
 
 function AppRootContent() {
-  const { colors, isDark, isSettingsReady, defaultAnonymous } = useAppSettings();
+  const { colors, isDark, isSettingsReady, defaultAnonymous, setDefaultAnonymous } =
+    useAppSettings();
   const [session, setSession] = useState(null);
   const [authInitialMode, setAuthInitialMode] = useState('login');
   const [onboardingDone, setOnboardingDone] = useState(false);
@@ -53,15 +54,25 @@ function AppRootContent() {
     };
   }, []);
 
+  const handleSetAnonymousMode = useCallback(
+    async (nextValue) => {
+      const target = Boolean(nextValue);
+      await setDefaultAnonymous(target);
+      if (!session || session.isDemo) return;
+      const updated = await authService.updateSession({ isAnonymousMode: target });
+      if (updated) {
+        setSession(updated);
+      }
+    },
+    [session, setDefaultAnonymous]
+  );
+
   const handleToggleAnonymousMode = useCallback(async () => {
-    if (!session) return;
+    if (!session || session.isDemo) return;
     const currentMode =
       typeof session.isAnonymousMode === 'boolean' ? session.isAnonymousMode : defaultAnonymous;
-    const updated = await authService.updateSession({ isAnonymousMode: !currentMode });
-    if (updated) {
-      setSession(updated);
-    }
-  }, [session, defaultAnonymous]);
+    await handleSetAnonymousMode(!currentMode);
+  }, [session, defaultAnonymous, handleSetAnonymousMode]);
 
   const handleLogout = useCallback(async () => {
     await authService.logout();
@@ -96,6 +107,7 @@ function AppRootContent() {
         <MapHomeScreen
           session={session}
           onToggleAnonymousMode={handleToggleAnonymousMode}
+          onSetAnonymousMode={handleSetAnonymousMode}
           onLogout={handleLogout}
           onRequestCreateAccount={handleRequestCreateAccount}
         />

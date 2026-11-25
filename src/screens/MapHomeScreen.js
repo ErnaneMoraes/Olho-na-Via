@@ -23,7 +23,10 @@ import { LeafletMapView } from '../components/LeafletMapView';
 import { NewReportModal } from '../components/NewReportModal';
 import { PotholeCameraModal } from '../components/PotholeCameraModal';
 import { PotholeDetailModal } from '../components/PotholeDetailModal';
-import { useAppSettings } from '../context/AppSettingsContext';
+import {
+  getAnonymousModeConfirmationCopy,
+  useAppSettings,
+} from '../context/AppSettingsContext';
 import { recordDiagnosticEvent } from '../services/diagnosticLogService';
 import {
   fetchPendingRepairReviews,
@@ -97,6 +100,7 @@ function getCurrentPositionWithTimeout(timeoutMs = GPS_TIMEOUT_MS) {
 export function MapHomeScreen({
   session,
   onToggleAnonymousMode,
+  onSetAnonymousMode,
   onLogout,
   onRequestCreateAccount,
 }) {
@@ -134,6 +138,7 @@ export function MapHomeScreen({
 
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
+  const [pendingAnonymousTarget, setPendingAnonymousTarget] = useState(null);
 
   const [cameraModalVisible, setCameraModalVisible] = useState(false);
   const [cameraContext, setCameraContext] = useState({ mode: 'new_report' });
@@ -611,6 +616,24 @@ export function MapHomeScreen({
     setSelectedPothole((prev) => (prev ? stripUpdate(prev) : null));
   }, []);
 
+  const handleRequestToggleAnonymous = useCallback(() => {
+    if (session?.isDemo) return;
+    setPendingAnonymousTarget(!isAnonymousActive);
+  }, [session?.isDemo, isAnonymousActive]);
+
+  const handleConfirmAnonymousChange = useCallback(async () => {
+    if (pendingAnonymousTarget === null) return;
+    const targetVal = Boolean(pendingAnonymousTarget);
+    setPendingAnonymousTarget(null);
+    if (typeof onSetAnonymousMode === 'function') {
+      await onSetAnonymousMode(targetVal);
+    } else if (typeof onToggleAnonymousMode === 'function') {
+      await onToggleAnonymousMode();
+    }
+  }, [pendingAnonymousTarget, onSetAnonymousMode, onToggleAnonymousMode]);
+
+  const anonConfirmCopy = getAnonymousModeConfirmationCopy(Boolean(pendingAnonymousTarget));
+
   const renderFloatingTopBar = () => (
     <View
       pointerEvents="box-none"
@@ -635,8 +658,16 @@ export function MapHomeScreen({
         ]}
       >
         <Pressable
-          onPress={session?.isDemo ? undefined : onToggleAnonymousMode}
+          onPress={session?.isDemo ? undefined : handleRequestToggleAnonymous}
           disabled={Boolean(session?.isDemo)}
+          accessibilityRole={session?.isDemo ? undefined : 'button'}
+          accessibilityLabel={
+            session?.isDemo
+              ? 'Modo Demonstração'
+              : isAnonymousActive
+                ? 'Alternar para Modo Identificado'
+                : 'Alternar para Modo Anônimo'
+          }
           android_ripple={session?.isDemo ? undefined : { color: colors.accentSoft }}
           style={[
             styles.identityPill,
@@ -871,9 +902,20 @@ export function MapHomeScreen({
         <SettingsModal
         visible={settingsVisible}
         session={session}
+        onSetAnonymousMode={onSetAnonymousMode}
         onModerationChange={handleManualRefresh}
         onClose={() => setSettingsVisible(false)}
       />
+        <ConfirmModal
+          visible={pendingAnonymousTarget !== null}
+          title={anonConfirmCopy.title}
+          message={anonConfirmCopy.message}
+          icon={anonConfirmCopy.icon}
+          confirmLabel={anonConfirmCopy.confirmLabel}
+          cancelLabel={anonConfirmCopy.cancelLabel}
+          onConfirm={handleConfirmAnonymousChange}
+          onCancel={() => setPendingAnonymousTarget(null)}
+        />
         <ConfirmModal
           visible={logoutModalVisible}
           title="Sair da conta?"
@@ -942,9 +984,20 @@ export function MapHomeScreen({
         <SettingsModal
         visible={settingsVisible}
         session={session}
+        onSetAnonymousMode={onSetAnonymousMode}
         onModerationChange={handleManualRefresh}
         onClose={() => setSettingsVisible(false)}
       />
+        <ConfirmModal
+          visible={pendingAnonymousTarget !== null}
+          title={anonConfirmCopy.title}
+          message={anonConfirmCopy.message}
+          icon={anonConfirmCopy.icon}
+          confirmLabel={anonConfirmCopy.confirmLabel}
+          cancelLabel={anonConfirmCopy.cancelLabel}
+          onConfirm={handleConfirmAnonymousChange}
+          onCancel={() => setPendingAnonymousTarget(null)}
+        />
         <ConfirmModal
           visible={logoutModalVisible}
           title="Sair da conta?"
@@ -1084,8 +1137,20 @@ export function MapHomeScreen({
       <SettingsModal
         visible={settingsVisible}
         session={session}
+        onSetAnonymousMode={onSetAnonymousMode}
         onModerationChange={handleManualRefresh}
         onClose={() => setSettingsVisible(false)}
+      />
+
+      <ConfirmModal
+        visible={pendingAnonymousTarget !== null}
+        title={anonConfirmCopy.title}
+        message={anonConfirmCopy.message}
+        icon={anonConfirmCopy.icon}
+        confirmLabel={anonConfirmCopy.confirmLabel}
+        cancelLabel={anonConfirmCopy.cancelLabel}
+        onConfirm={handleConfirmAnonymousChange}
+        onCancel={() => setPendingAnonymousTarget(null)}
       />
 
       <ConfirmModal
