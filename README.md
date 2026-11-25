@@ -2,7 +2,7 @@
 
 Aplicativo colaborativo para **Android** e **Navegadores Web** (**Expo SDK 58 / React Native 0.88**) voltado ao mapeamento cidadão de buracos e problemas de pavimentação na sua cidade, com foco em privacidade (**LGPD**) e operação **100% livre de chaves pagas para mapas**.
 
-> **Versão atual:** `v1.6.8` (`2026.11.25-shutter-gps-repair-review-login-ui`) • **Plataformas:** Android nativo & Web Desktop/Mobile
+> **Versão atual:** `v1.6.9` (`2026.11.25-repair-approval-gate`) • **Plataformas:** Android nativo & Web Desktop/Mobile
 
 ---
 

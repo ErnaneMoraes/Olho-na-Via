@@ -585,11 +585,24 @@ export const SupabasePotholeAdapter = {
       );
     }
 
+    const { data: dbPothole } = await supabase
+      .from('potholes')
+      .select('id, user_id, status, street_address')
+      .eq('id', potholeId)
+      .maybeSingle();
+
+    const ownerUserId = dbPothole?.user_id || currentPothole?.authorUserId || null;
+    const isOtherUserSuggestingFix =
+      nextStatus === 'fixed' &&
+      Boolean(ownerUserId) &&
+      ownerUserId !== activeUserId;
+    const persistedPotholeStatus = isOtherUserSuggestingFix ? 'open' : nextStatus;
+
     const nextConfirmations = (currentPothole?.confirmations || 1) + 1;
     const { data: updatedRow, error: patchError } = await supabase
       .from('potholes')
       .update({
-        status: nextStatus,
+        status: persistedPotholeStatus,
         thumb_url: uploaded.thumbUri,
         full_url: uploaded.fullUri,
         confirmations: nextConfirmations,
@@ -618,15 +631,21 @@ export const SupabasePotholeAdapter = {
 
     await recordDiagnosticEvent('VERIFICACAO', 'Verificação publicada no Supabase', {
       nextStatus,
+      persistedPotholeStatus,
+      pendingAuthorApproval: isOtherUserSuggestingFix,
       isAnonymous: anonymousFlag,
     });
 
-    if (nextStatus === 'fixed') {
+    if (isOtherUserSuggestingFix) {
       await notifyRepairSubmitted({
         pothole: {
           ...updatedRow,
-          authorUserId: updatedRow.user_id || currentPothole?.authorUserId || null,
-          streetAddress: updatedRow.street_address || currentPothole?.streetAddress || '',
+          authorUserId: ownerUserId,
+          streetAddress:
+            updatedRow.street_address ||
+            dbPothole?.street_address ||
+            currentPothole?.streetAddress ||
+            '',
         },
         updateId: insertedUpdate.id,
         actorUserId: activeUserId,

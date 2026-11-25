@@ -30,6 +30,7 @@ export async function notifyRepairSubmitted({ pothole, updateId = null, actorUse
       title: 'Correção informada no seu relato',
       body: `Alguém informou que o buraco em ${street} foi tampado. Toque para avaliar e confirmar.`,
       is_read: false,
+      review_decision: null,
     });
 
     if (error) {
@@ -80,6 +81,73 @@ export async function fetchUnreadNotifications(userId) {
 }
 
 /**
+ * Busca revisões de correção pendentes (review_decision IS NULL) para o autor autenticado.
+ */
+export async function fetchPendingRepairReviews(userId) {
+  if (!isSupabaseConfigured() || !userId) {
+    return [];
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('user_notifications')
+      .select(
+        'id, recipient_user_id, actor_user_id, pothole_id, pothole_update_id, type, title, body, is_read, review_decision, created_at'
+      )
+      .eq('recipient_user_id', userId)
+      .eq('type', 'repair_review_requested')
+      .is('review_decision', null)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (error || !Array.isArray(data)) {
+      return [];
+    }
+
+    return data.map((row) => ({
+      ...row,
+      createdAtFormatted: formatDateTimePtBr(row.created_at),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Busca revisão de correção pendente (review_decision IS NULL) para um relato específico.
+ */
+export async function fetchPendingRepairReviewForPothole(userId, potholeId) {
+  if (!isSupabaseConfigured() || !userId || !potholeId) {
+    return null;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('user_notifications')
+      .select(
+        'id, recipient_user_id, actor_user_id, pothole_id, pothole_update_id, type, title, body, is_read, review_decision, created_at'
+      )
+      .eq('recipient_user_id', userId)
+      .eq('pothole_id', potholeId)
+      .eq('type', 'repair_review_requested')
+      .is('review_decision', null)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (error || !Array.isArray(data) || data.length === 0) {
+      return null;
+    }
+
+    return {
+      ...data[0],
+      createdAtFormatted: formatDateTimePtBr(data[0].created_at),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Marca uma notificação específica como lida.
  */
 export async function markNotificationRead(notificationId) {
@@ -103,13 +171,15 @@ export async function markNotificationRead(notificationId) {
  * Permite ao autor original do relato aprovar a correção informada ou reabrir o buraco no mapa.
  */
 export async function submitRepairAuthorReview({
-  pothole,
+  pothole = null,
+  potholeId = null,
   notificationId = null,
   approved,
   reviewerNote = '',
   authorNickname = 'Autor do relato',
 }) {
-  if (!isSupabaseConfigured() || !pothole?.id) {
+  const targetPotholeId = pothole?.id || potholeId || null;
+  if (!isSupabaseConfigured() || !targetPotholeId) {
     throw new Error('Sincronização com a nuvem indisponível para avaliar a correção.');
   }
 
@@ -119,7 +189,7 @@ export async function submitRepairAuthorReview({
     throw new Error('Sessão expirada ou conta não autenticada. Entre novamente para avaliar.');
   }
 
-  if (pothole.authorUserId && pothole.authorUserId !== activeUserId) {
+  if (pothole?.authorUserId && pothole.authorUserId !== activeUserId) {
     throw new Error('Apenas o autor original do relato pode aprovar ou reabrir esta correção.');
   }
 
@@ -127,14 +197,14 @@ export async function submitRepairAuthorReview({
   const cleanNote =
     String(reviewerNote || '').trim() ||
     (approved
-      ? 'Correção aprovada pelo autor do relato.'
-      : 'O autor informou que o buraco ainda não foi tampado (relato reaberto).');
+      ? 'Autor original aprovou a correção informada.'
+      : 'Autor original informou que o problema ainda persiste (reaberto).');
   const cleanNickname = String(authorNickname || 'Autor do relato').trim();
 
   const { data: insertedUpdate, error: insertError } = await supabase
     .from('pothole_updates')
     .insert({
-      pothole_id: pothole.id,
+      pothole_id: targetPotholeId,
       user_id: activeUserId,
       author_nickname: cleanNickname,
       is_anonymous: false,
@@ -157,7 +227,7 @@ export async function submitRepairAuthorReview({
   const { error: patchError } = await supabase
     .from('potholes')
     .update({ status: nextStatus })
-    .eq('id', pothole.id);
+    .eq('id', targetPotholeId);
 
   if (patchError) {
     throw new Error(
@@ -167,27 +237,33 @@ export async function submitRepairAuthorReview({
 
   try {
     const decision = approved ? 'approved' : 'rejected';
-    let notifQuery = supabase
+    await supabase
       .from('user_notifications')
       .update({
         is_read: true,
         review_decision: decision,
       })
-      .eq('recipient_user_id', activeUserId);
+      .eq('recipient_user_id', activeUserId)
+      .eq('pothole_id', targetPotholeId)
+      .eq('type', 'repair_review_requested')
+      .is('review_decision', null);
 
     if (notificationId) {
-      notifQuery = notifQuery.eq('id', notificationId);
-    } else {
-      notifQuery = notifQuery.eq('pothole_id', pothole.id).eq('is_read', false);
+      await supabase
+        .from('user_notifications')
+        .update({
+          is_read: true,
+          review_decision: decision,
+        })
+        .eq('id', notificationId)
+        .eq('recipient_user_id', activeUserId);
     }
-
-    await notifQuery;
   } catch (err) {
     await recordAppErrorLog('notificationService.markReviewNotification', err);
   }
 
   await recordDiagnosticEvent('AVALIACAO_AUTOR', 'Autor avaliou correção informada', {
-    potholeId: pothole.id,
+    potholeId: targetPotholeId,
     approved: Boolean(approved),
     nextStatus,
   });

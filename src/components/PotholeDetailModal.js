@@ -34,7 +34,10 @@ import {
   formatAdminRealAuthorLabel,
 } from '../services/adminService';
 import { reverseGeocodeCoordinate } from '../services/geocodingService';
-import { submitRepairAuthorReview } from '../services/notificationService';
+import {
+  fetchPendingRepairReviewForPothole,
+  submitRepairAuthorReview,
+} from '../services/notificationService';
 import { deletePotholePhotos } from '../services/potholeMediaService';
 import { potholeRepository } from '../services/potholeRepository';
 import { formatDateTimePtBr } from '../services/potholeSeedService';
@@ -89,6 +92,7 @@ export function PotholeDetailModal({
   session,
   initialAnonymous,
   pendingVerificationDraft,
+  pendingReviewNotification = null,
   onClose,
   onStartVerification,
   onCancelVerificationDraft,
@@ -137,6 +141,7 @@ export function PotholeDetailModal({
   const [submittingAuthorReview, setSubmittingAuthorReview] = useState(false);
   const [authorReviewFeedback, setAuthorReviewFeedback] = useState('');
   const [authorReviewError, setAuthorReviewError] = useState('');
+  const [activePendingReview, setActivePendingReview] = useState(pendingReviewNotification);
   const [adminBusy, setAdminBusy] = useState(false);
   const [adminIdentities, setAdminIdentities] = useState({});
   const [anonToastMsg, setAnonToastMsg] = useState('');
@@ -171,6 +176,42 @@ export function PotholeDetailModal({
     setAuthorReviewFeedback('');
     setAuthorReviewError('');
   }, [pothole?.id, visible]);
+
+  useEffect(() => {
+    setActivePendingReview(pendingReviewNotification || null);
+    if (
+      !visible ||
+      !pothole?.id ||
+      !session?.userId ||
+      session?.isDemo ||
+      !pothole?.isCloudReport ||
+      pothole?.authorUserId !== session.userId
+    ) {
+      return;
+    }
+
+    let active = true;
+    fetchPendingRepairReviewForPothole(session.userId, pothole.id)
+      .then((pending) => {
+        if (active) {
+          setActivePendingReview(pending || null);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      active = false;
+    };
+  }, [
+    visible,
+    pothole?.id,
+    pothole?.isCloudReport,
+    pothole?.authorUserId,
+    pothole?.verifications?.length,
+    session?.userId,
+    session?.isDemo,
+    pendingReviewNotification,
+  ]);
 
   useEffect(() => {
     if (visible) {
@@ -475,9 +516,13 @@ export function PotholeDetailModal({
     try {
       const reviewRes = await submitRepairAuthorReview({
         pothole,
+        potholeId: pothole.id,
+        notificationId: activePendingReview?.id || null,
         approved,
         authorNickname: session?.nickname || 'Autor do relato',
       });
+
+      setActivePendingReview(null);
 
       let refreshed = await potholeRepository.getReportById(pothole.id);
       if (!refreshed) {
@@ -525,13 +570,13 @@ export function PotholeDetailModal({
   }
 
   const canModerateCloud = Boolean(session?.isAdmin && pothole?.isCloudReport);
-  const canReviewRepair = Boolean(
+  const hasPendingAuthorReview = Boolean(
     session &&
       !session.isDemo &&
       pothole?.isCloudReport &&
       pothole?.authorUserId &&
       pothole.authorUserId === session.userId &&
-      pothole.status === 'fixed'
+      activePendingReview
   );
 
   const isFixed = pothole.status === 'fixed';
@@ -600,15 +645,34 @@ export function PotholeDetailModal({
               <View style={[styles.dragHandlePill, { backgroundColor: colors.border }]} />
 
               <View style={[SharedStyles.contentContainer, styles.header]}>
-                <View style={[styles.statusBadge, { backgroundColor: statusSoft }]}>
-                  <FontAwesome6
-                    name={isFixed ? 'circle-check' : 'triangle-exclamation'}
-                    size={13}
-                    color={statusColor}
-                  />
-                  <Text style={[styles.statusBadgeText, { color: statusColor }]}>
-                    {statusBadgeText}
-                  </Text>
+                <View style={styles.statusHeaderStack}>
+                  <View style={[styles.statusBadge, { backgroundColor: statusSoft }]}>
+                    <FontAwesome6
+                      name={isFixed ? 'circle-check' : 'triangle-exclamation'}
+                      size={13}
+                      color={statusColor}
+                    />
+                    <Text style={[styles.statusBadgeText, { color: statusColor }]}>
+                      {statusBadgeText}
+                    </Text>
+                  </View>
+
+                  {hasPendingAuthorReview ? (
+                    <View
+                      style={[
+                        styles.pendingReviewSubBadge,
+                        { backgroundColor: colors.warningSoft },
+                      ]}
+                    >
+                      <FontAwesome6 name="bell" size={11} color={colors.warningText} />
+                      <Text
+                        numberOfLines={1}
+                        style={[styles.pendingReviewSubBadgeText, { color: colors.warningText }]}
+                      >
+                        Correção sugerida — aguardando sua avaliação
+                      </Text>
+                    </View>
+                  ) : null}
                 </View>
 
                 <Pressable
@@ -829,7 +893,33 @@ export function PotholeDetailModal({
                 </View>
               ) : null}
 
-              {canReviewRepair ? (
+              {/* Fluxo de Verificação Comunitária / Avaliação Exclusiva do Autor */}
+              {session?.isDemo ? (
+                <View
+                  style={[
+                    styles.sectionCard,
+                    cardShadow,
+                    {
+                      backgroundColor: colors.surfaceMuted,
+                      borderColor: colors.border,
+                      borderWidth,
+                      borderRadius: radiusCard,
+                    },
+                  ]}
+                >
+                  <View style={styles.anonSwitchRow}>
+                    <FontAwesome6 name="lock" size={16} color={colors.primary} />
+                    <View style={styles.flexOne}>
+                      <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                        Modo Demonstração (Somente Leitura)
+                      </Text>
+                      <Text style={[styles.helperText, { color: colors.textSecondary }]}>
+                        Faça login ou crie uma conta gratuita para confirmar status ou enviar fotos.
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              ) : hasPendingAuthorReview ? (
                 <View
                   style={[
                     styles.sectionCard,
@@ -864,6 +954,8 @@ export function PotholeDetailModal({
                       icon="circle-check"
                       loading={submittingAuthorReview}
                       disabled={submittingAuthorReview || savingVerification}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
                       onPress={() => handleRepairAuthorReview(true)}
                       style={styles.flexOne}
                     />
@@ -873,37 +965,11 @@ export function PotholeDetailModal({
                       icon="rotate-left"
                       loading={submittingAuthorReview}
                       disabled={submittingAuthorReview || savingVerification}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
                       onPress={() => handleRepairAuthorReview(false)}
                       style={styles.flexOne}
                     />
-                  </View>
-                </View>
-              ) : null}
-
-              {/* Fluxo de Verificação Comunitária */}
-              {session?.isDemo ? (
-                <View
-                  style={[
-                    styles.sectionCard,
-                    cardShadow,
-                    {
-                      backgroundColor: colors.surfaceMuted,
-                      borderColor: colors.border,
-                      borderWidth,
-                      borderRadius: radiusCard,
-                    },
-                  ]}
-                >
-                  <View style={styles.anonSwitchRow}>
-                    <FontAwesome6 name="lock" size={16} color={colors.primary} />
-                    <View style={styles.flexOne}>
-                      <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                        Modo Demonstração (Somente Leitura)
-                      </Text>
-                      <Text style={[styles.helperText, { color: colors.textSecondary }]}>
-                        Faça login ou crie uma conta gratuita para confirmar status ou enviar fotos.
-                      </Text>
-                    </View>
                   </View>
                 </View>
               ) : pendingVerificationDraft ? (
@@ -1266,7 +1332,24 @@ export function PotholeDetailModal({
                                   resizeMode="cover"
                                 />
                               </Pressable>
-                            ) : null}
+                            ) : (
+                              <View
+                                style={[
+                                  styles.timelineIconBadge,
+                                  {
+                                    backgroundColor: entrySoft,
+                                    borderColor: entryColor,
+                                    borderRadius: radiusInput,
+                                  },
+                                ]}
+                              >
+                                <FontAwesome6
+                                  name={entryFixed ? 'circle-check' : 'rotate-left'}
+                                  size={16}
+                                  color={entryColor}
+                                />
+                              </View>
+                            )}
 
                             {canModerateCloud && entry.id ? (
                               <Pressable
@@ -1428,6 +1511,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 10,
+  },
+  statusHeaderStack: {
+    flex: 1,
+    alignItems: 'flex-start',
+    gap: 6,
   },
   statusBadge: {
     flexDirection: 'row',
@@ -1440,6 +1529,19 @@ const styles = StyleSheet.create({
   statusBadgeText: {
     fontSize: 13,
     fontWeight: '700',
+  },
+  pendingReviewSubBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    gap: 6,
+  },
+  pendingReviewSubBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    flexShrink: 1,
   },
   closeBtn: {
     width: 36,
@@ -1706,6 +1808,13 @@ const styles = StyleSheet.create({
     height: 52,
     borderWidth: 1,
     overflow: 'hidden',
+  },
+  timelineIconBadge: {
+    width: 44,
+    height: 44,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   timelineThumbImg: {
     width: '100%',

@@ -79,6 +79,13 @@ create policy "Usuários autenticados atualizam status do buraco"
   using (true)
   with check (status in ('open', 'fixed'));
 
+drop policy if exists "Autor original atualiza status do proprio relato" on public.potholes;
+create policy "Autor original atualiza status do proprio relato"
+  on public.potholes for update
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id and status in ('open', 'fixed'));
+
 -- 3. Histórico de verificações comunitárias ("Continua Aberto" / "Já foi Tampado")
 create table if not exists public.pothole_updates (
   id uuid primary key default gen_random_uuid(),

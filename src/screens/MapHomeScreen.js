@@ -26,6 +26,7 @@ import { PotholeDetailModal } from '../components/PotholeDetailModal';
 import { useAppSettings } from '../context/AppSettingsContext';
 import { recordDiagnosticEvent } from '../services/diagnosticLogService';
 import {
+  fetchPendingRepairReviews,
   fetchUnreadNotifications,
   markNotificationRead,
 } from '../services/notificationService';
@@ -138,6 +139,7 @@ export function MapHomeScreen({
   const [cameraContext, setCameraContext] = useState({ mode: 'new_report' });
   const [webOnlyModalVisible, setWebOnlyModalVisible] = useState(false);
   const [unreadNotifications, setUnreadNotifications] = useState([]);
+  const [pendingReviewNotifications, setPendingReviewNotifications] = useState([]);
   const [notificationsVisible, setNotificationsVisible] = useState(false);
   const [openingNotificationId, setOpeningNotificationId] = useState(null);
 
@@ -148,10 +150,15 @@ export function MapHomeScreen({
   const refreshNotifications = useCallback(async () => {
     if (!session?.userId || session?.isDemo) {
       setUnreadNotifications([]);
+      setPendingReviewNotifications([]);
       return;
     }
-    const list = await fetchUnreadNotifications(session.userId);
-    setUnreadNotifications(Array.isArray(list) ? list : []);
+    const [unreadList, pendingList] = await Promise.all([
+      fetchUnreadNotifications(session.userId),
+      fetchPendingRepairReviews(session.userId),
+    ]);
+    setUnreadNotifications(Array.isArray(unreadList) ? unreadList : []);
+    setPendingReviewNotifications(Array.isArray(pendingList) ? pendingList : []);
   }, [session?.userId, session?.isDemo]);
 
   useEffect(() => {
@@ -1120,6 +1127,9 @@ export function MapHomeScreen({
         session={session}
         initialAnonymous={isAnonymousActive}
         pendingVerificationDraft={pendingVerificationDraft}
+        pendingReviewNotification={
+          pendingReviewNotifications.find((n) => n.pothole_id === selectedPothole?.id) || null
+        }
         onClose={() => {
           setDetailModalVisible(false);
           setPendingVerificationDraft(null);

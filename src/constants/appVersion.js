@@ -1,8 +1,19 @@
 export const APP_NAME = 'Olho na Via';
-export const APP_VERSION = '1.6.8';
-export const APP_BUILD_TAG = '2026.11.25-shutter-gps-repair-review-login-ui';
+export const APP_VERSION = '1.6.9';
+export const APP_BUILD_TAG = '2026.11.25-repair-approval-gate';
 
 export const APP_CHANGELOG = [
+  {
+    version: '1.6.9',
+    date: '25/11/2026',
+    title: 'Aprovação Obrigatória pelo Autor, Histórico Sem Foto e Cartão Exclusivo',
+    highlights: [
+      'Sugestões de "Já foi Tampado" enviadas por outros cidadãos agora mantêm o pino em aberto ("Buraco Aberto") até a aprovação explícita do autor original.',
+      'Permitidos registros de avaliação do autor sem nova foto (thumb_url e full_url opcionais em pothole_updates) com política RLS explícita para o autor atualizar o próprio relato.',
+      'Exibição exclusiva do cartão "Avaliar Correção Informada" com sub-badge de pendência enquanto o autor não decide, ocultando o cartão duplicado de atualização.',
+      'Lista de histórico no modal adaptada para renderizar decisões do autor sem foto usando ícone de status limpo.',
+    ],
+  },
   {
     version: '1.6.8',
     date: '25/11/2026',
