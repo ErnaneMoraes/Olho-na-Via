@@ -50,6 +50,10 @@ alter table public.potholes
   drop constraint if exists potholes_comment_check;
 
 alter table public.potholes
+  add constraint potholes_comment_check
+  check (comment is null or char_length(comment) <= 280);
+
+alter table public.potholes
   alter column comment set default '';
 
 create index if not exists idx_potholes_lat_lng
