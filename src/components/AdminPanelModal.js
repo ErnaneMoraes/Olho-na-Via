@@ -496,9 +496,19 @@ export function AdminPanelModal({
                     {item.street_address} — {item.comment}
                   </Text>
                   {item.is_anonymous ? (
-                    <View style={styles.adminAuthorBadge}>
-                      <FontAwesome6 name="user-shield" size={11} color="#B3261E" />
-                      <Text style={styles.adminAuthorBadgeText}>
+                    <View
+                      style={[
+                        styles.adminAuthorBadge,
+                        {
+                          backgroundColor: colors.adminCardBg,
+                          borderColor: colors.adminCardBorder,
+                        },
+                      ]}
+                    >
+                      <FontAwesome6 name="user-shield" size={11} color={colors.adminCardTitle} />
+                      <Text
+                        style={[styles.adminAuthorBadgeText, { color: colors.adminCardTitle }]}
+                      >
                         {formatAdminRealAuthorLabel(item.real_author, item.user_id)}
                       </Text>
                     </View>
@@ -588,9 +598,19 @@ export function AdminPanelModal({
                     {item.note || 'Sem observação adicional.'}
                   </Text>
                   {item.is_anonymous ? (
-                    <View style={styles.adminAuthorBadge}>
-                      <FontAwesome6 name="user-shield" size={11} color="#B3261E" />
-                      <Text style={styles.adminAuthorBadgeText}>
+                    <View
+                      style={[
+                        styles.adminAuthorBadge,
+                        {
+                          backgroundColor: colors.adminCardBg,
+                          borderColor: colors.adminCardBorder,
+                        },
+                      ]}
+                    >
+                      <FontAwesome6 name="user-shield" size={11} color={colors.adminCardTitle} />
+                      <Text
+                        style={[styles.adminAuthorBadgeText, { color: colors.adminCardTitle }]}
+                      >
                         {formatAdminRealAuthorLabel(item.real_author, item.user_id)}
                       </Text>
                     </View>

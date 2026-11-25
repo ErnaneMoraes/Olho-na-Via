@@ -90,10 +90,76 @@ export const MATERIAL_YOU_THEME = Object.freeze({
     dangerSoft: 'rgba(217, 48, 37, 0.12)',
     dangerText: '#991B1B',
 
+    infoBannerBg: '#EEF4FF',
+    infoBannerBorder: '#BFD7FF',
+    infoBannerText: '#1E3A8A',
+
+    adminCardBg: '#FCE8E6',
+    adminCardBorder: '#F5C2C0',
+    adminCardTitle: '#8C1D18',
+
     overlay: 'rgba(15, 23, 42, 0.48)',
   }),
 });
 
-export function getThemeById() {
-  return MATERIAL_YOU_THEME;
+export const MATERIAL_YOU_DARK_THEME = Object.freeze({
+  id: THEME_IDS.MATERIAL_YOU,
+  name: 'Material You Escuro',
+  description: 'Paleta escura de alto contraste Material You',
+  isDark: true,
+  shape: MATERIAL_YOU_THEME.shape,
+  cardShadow,
+  typography: MATERIAL_YOU_THEME.typography,
+  colors: Object.freeze({
+    primary: '#8AB4F8',
+    principal: '#8AB4F8',
+    primaryText: '#0F172A',
+    textoPrincipal: '#0F172A',
+    accent: '#8AB4F8',
+    accentSoft: 'rgba(138, 180, 248, 0.16)',
+
+    background: '#121417',
+    card: '#1E2228',
+    surface: '#1E2228',
+    surfaceMuted: '#282D35',
+    inputBackground: '#242931',
+    dividerColor: '#323842',
+
+    text: '#F1F3F4',
+    textoEscuro: '#F1F3F4',
+    textSecondary: '#BDC1C6',
+    textMuted: '#9AA0A6',
+    border: '#3C4043',
+    borderColor: '#3C4043',
+    disabledBackground: '#374151',
+
+    success: '#81C995',
+    successSoft: 'rgba(129, 201, 149, 0.18)',
+    verdeSuave: 'rgba(129, 201, 149, 0.18)',
+    badgeBg: 'rgba(138, 180, 248, 0.16)',
+    badgeText: '#8AB4F8',
+
+    warning: '#FDD663',
+    warningSoft: 'rgba(253, 214, 99, 0.16)',
+    warningText: '#FDE68A',
+
+    danger: '#F28B82',
+    logoutRed: '#F28B82',
+    dangerSoft: 'rgba(242, 139, 130, 0.18)',
+    dangerText: '#FCA5A5',
+
+    infoBannerBg: '#1E293B',
+    infoBannerBorder: '#3B82F6',
+    infoBannerText: '#DBEAFE',
+
+    adminCardBg: '#3B1D1D',
+    adminCardBorder: '#7F2D2D',
+    adminCardTitle: '#FCA5A5',
+
+    overlay: 'rgba(0, 0, 0, 0.65)',
+  }),
+});
+
+export function getThemeById(_id, isDark = false) {
+  return isDark ? MATERIAL_YOU_DARK_THEME : MATERIAL_YOU_THEME;
 }

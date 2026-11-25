@@ -40,11 +40,11 @@ create table if not exists public.potholes (
   thumb_url text not null,
   full_url text not null,
   confirmations integer not null default 1,
-  created_at timestamptz not null default now(),
-  constraint potholes_lgpd_anonymous_check check (
-    not is_anonymous or author_nickname is null or author_nickname = 'Usuário Anônimo'
-  )
+  created_at timestamptz not null default now()
 );
+
+alter table public.potholes
+  drop constraint if exists potholes_lgpd_anonymous_check;
 
 create index if not exists idx_potholes_lat_lng
   on public.potholes (latitude, longitude);
@@ -84,11 +84,14 @@ create table if not exists public.pothole_updates (
   note text default '',
   thumb_url text not null,
   full_url text not null,
-  created_at timestamptz not null default now(),
-  constraint updates_lgpd_anonymous_check check (
-    not is_anonymous or author_nickname is null or author_nickname = 'Usuário Anônimo'
-  )
+  created_at timestamptz not null default now()
 );
+
+alter table public.pothole_updates
+  drop constraint if exists pothole_updates_lgpd_anonymous_check;
+
+alter table public.pothole_updates
+  drop constraint if exists updates_lgpd_anonymous_check;
 
 create index if not exists idx_pothole_updates_pothole_id
   on public.pothole_updates (pothole_id, created_at desc);

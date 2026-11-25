@@ -1,8 +1,19 @@
 export const APP_NAME = 'Olho na Via';
-export const APP_VERSION = '1.6.5';
-export const APP_BUILD_TAG = '2026.11.25-mobile-web-camera-capture';
+export const APP_VERSION = '1.6.7';
+export const APP_BUILD_TAG = '2026.11.25-dark-mode-accordion-settings';
 
 export const APP_CHANGELOG = [
+  {
+    version: '1.6.7',
+    date: '25/11/2026',
+    title: 'Modo Escuro no Cabeçalho, Acordeões Recolhidos e Aviso de Transparência',
+    highlights: [
+      'Adicionado botão Lua/Sol no cabeçalho de Configurações alternando o tema Material You Claro/Escuro globalmente (persistido em @olhonavia:settings).',
+      'Todas as seções de Configurações refatoradas em acordeões que iniciam recolhidos por padrão.',
+      'Aviso destacado e toast imediato sobre visibilidade administrativa ao ativar o modo anônimo no novo relato, na verificação e em Configurações.',
+      'Removidas restrições anônimas legadas do schema.sql garantindo armazenamento do user_id para moderação.',
+    ],
+  },
   {
     version: '1.6.5',
     date: '25/11/2026',

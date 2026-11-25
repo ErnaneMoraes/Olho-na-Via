@@ -1,12 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { MATERIAL_YOU_THEME, THEME_IDS } from '../theme/themes';
+import { MATERIAL_YOU_DARK_THEME, MATERIAL_YOU_THEME, THEME_IDS } from '../theme/themes';
 
 const SETTINGS_STORAGE_KEY = '@olhonavia:settings';
 
 const DEFAULT_SETTINGS = {
   defaultAnonymous: false,
   cameraShutterSound: false,
+  darkMode: false,
 };
 
 const AppSettingsContext = createContext(null);
@@ -14,6 +15,7 @@ const AppSettingsContext = createContext(null);
 export function AppSettingsProvider({ children }) {
   const [defaultAnonymous, setDefaultAnonymousState] = useState(false);
   const [cameraShutterSound, setCameraShutterSoundState] = useState(false);
+  const [darkMode, setDarkModeState] = useState(false);
   const [dataVersion, setDataVersion] = useState(0);
   const [isSettingsReady, setIsSettingsReady] = useState(false);
   const settingsRef = useRef({ ...DEFAULT_SETTINGS });
@@ -29,12 +31,15 @@ export function AppSettingsProvider({ children }) {
           const parsed = JSON.parse(rawSettings);
           const nextDefaultAnonymous = Boolean(parsed.defaultAnonymous);
           const nextShutterSound = Boolean(parsed.cameraShutterSound);
+          const nextDarkMode = Boolean(parsed.darkMode);
           settingsRef.current = {
             defaultAnonymous: nextDefaultAnonymous,
             cameraShutterSound: nextShutterSound,
+            darkMode: nextDarkMode,
           };
           setDefaultAnonymousState(nextDefaultAnonymous);
           setCameraShutterSoundState(nextShutterSound);
+          setDarkModeState(nextDarkMode);
         }
       } catch {
         // Fallback silencioso para padrões seguros
@@ -58,6 +63,7 @@ export function AppSettingsProvider({ children }) {
     settingsRef.current = merged;
     setDefaultAnonymousState(Boolean(merged.defaultAnonymous));
     setCameraShutterSoundState(Boolean(merged.cameraShutterSound));
+    setDarkModeState(Boolean(merged.darkMode));
     try {
       await AsyncStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(merged));
     } catch {
@@ -75,28 +81,44 @@ export function AppSettingsProvider({ children }) {
     [persistSettings]
   );
 
+  const setDarkMode = useCallback(
+    (value) => persistSettings({ darkMode: Boolean(value) }),
+    [persistSettings]
+  );
+
+  const toggleDarkMode = useCallback(
+    () => persistSettings({ darkMode: !settingsRef.current.darkMode }),
+    [persistSettings]
+  );
+
   const notifyDataRestored = useCallback(() => {
     setDataVersion((v) => v + 1);
   }, []);
 
+  const activeTheme = darkMode ? MATERIAL_YOU_DARK_THEME : MATERIAL_YOU_THEME;
+
   const value = useMemo(
     () => ({
       themeId: THEME_IDS.MATERIAL_YOU,
-      theme: MATERIAL_YOU_THEME,
-      colors: MATERIAL_YOU_THEME.colors,
-      isDark: false,
-      shape: MATERIAL_YOU_THEME.shape,
-      radiusCard: MATERIAL_YOU_THEME.shape.radiusCard,
-      radiusButton: MATERIAL_YOU_THEME.shape.radiusButton,
-      radiusInput: MATERIAL_YOU_THEME.shape.radiusInput,
-      borderWidth: MATERIAL_YOU_THEME.shape.borderWidth,
-      cardShadow: MATERIAL_YOU_THEME.cardShadow,
-      typography: MATERIAL_YOU_THEME.typography,
+      theme: activeTheme,
+      colors: activeTheme.colors,
+      isDark: darkMode,
+      darkMode,
+      setDarkMode,
+      toggleDarkMode,
+      shape: activeTheme.shape,
+      radiusCard: activeTheme.shape.radiusCard,
+      radiusButton: activeTheme.shape.radiusButton,
+      radiusInput: activeTheme.shape.radiusInput,
+      borderWidth: activeTheme.shape.borderWidth,
+      cardShadow: activeTheme.cardShadow,
+      typography: activeTheme.typography,
       isMaterialYouTheme: true,
       isGoogleMapsTheme: true,
       settings: {
         defaultAnonymous,
         cameraShutterSound,
+        darkMode,
       },
       defaultAnonymous,
       setDefaultAnonymous,
@@ -109,6 +131,10 @@ export function AppSettingsProvider({ children }) {
       isSettingsReady,
     }),
     [
+      activeTheme,
+      darkMode,
+      setDarkMode,
+      toggleDarkMode,
       defaultAnonymous,
       setDefaultAnonymous,
       cameraShutterSound,

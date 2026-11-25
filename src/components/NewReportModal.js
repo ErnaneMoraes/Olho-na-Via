@@ -1,6 +1,6 @@
 import { FontAwesome6 } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -50,9 +50,31 @@ export function NewReportModal({
   const [streetAddress, setStreetAddress] = useState('');
   const [comment, setComment] = useState('');
   const [isAnonymous, setIsAnonymous] = useState(Boolean(initialAnonymous));
+  const [anonToastMsg, setAnonToastMsg] = useState('');
   const [privacyConfirmed, setPrivacyConfirmed] = useState(Boolean(capturedMedia?.privacyConfirmed));
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const anonToastTimerRef = useRef(null);
+
+  const triggerAnonToast = () => {
+    if (anonToastTimerRef.current) {
+      clearTimeout(anonToastTimerRef.current);
+    }
+    setAnonToastMsg(
+      'Modo anônimo ativado: sua identidade continua visível apenas para administradores.'
+    );
+    anonToastTimerRef.current = setTimeout(() => {
+      setAnonToastMsg('');
+    }, 4000);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (anonToastTimerRef.current) {
+        clearTimeout(anonToastTimerRef.current);
+      }
+    };
+  }, []);
 
   const topSafePadding =
     Math.max(insets.top, Platform.OS === 'android' ? StatusBar.currentHeight || 24 : 12) + 8;
@@ -63,6 +85,7 @@ export function NewReportModal({
     let active = true;
     setComment('');
     setErrorMsg('');
+    setAnonToastMsg('');
     setIsAnonymous(Boolean(initialAnonymous));
     setPrivacyConfirmed(Boolean(capturedMedia?.privacyConfirmed));
     setCoords(fallbackCoords || null);
@@ -353,17 +376,52 @@ export function NewReportModal({
                   Publicar de forma anônima
                 </Text>
                 <Text style={[styles.switchSubtitle, { color: colors.textSecondary }]}>
-                  Seu apelido ficará oculto para outros usuários e o relato exibirá "Usuário
-                  Anônimo".
+                  Seu apelido ficará oculto para o público ('Usuário Anônimo'), mas administradores
+                  podem visualizar sua identidade para moderação.
                 </Text>
               </View>
               <Switch
                 value={isAnonymous}
-                onValueChange={setIsAnonymous}
+                onValueChange={(nextVal) => {
+                  if (nextVal && !isAnonymous) {
+                    triggerAnonToast();
+                  } else if (!nextVal) {
+                    setAnonToastMsg('');
+                  }
+                  setIsAnonymous(nextVal);
+                }}
                 trackColor={{ false: colors.border, true: colors.primary }}
                 thumbColor="#FFFFFF"
               />
             </View>
+
+            {isAnonymous ? (
+              <View
+                style={[
+                  styles.infoCallout,
+                  {
+                    backgroundColor: colors.infoBannerBg,
+                    borderColor: colors.infoBannerBorder,
+                    borderRadius: radiusInput,
+                  },
+                ]}
+              >
+                <FontAwesome6 name="circle-info" size={14} color={colors.primary} />
+                <Text style={[styles.infoCalloutText, { color: colors.infoBannerText }]}>
+                  Aviso de transparência: sua identidade continua visível apenas para administradores
+                  do sistema para prevenção de abusos e moderação.
+                </Text>
+              </View>
+            ) : null}
+
+            {anonToastMsg ? (
+              <View style={[styles.toastPill, { backgroundColor: colors.text }]}>
+                <FontAwesome6 name="circle-info" size={12} color={colors.background} />
+                <Text style={[styles.toastPillText, { color: colors.background }]}>
+                  {anonToastMsg}
+                </Text>
+              </View>
+            ) : null}
           </View>
 
           {/* Confirmação obrigatória de privacidade da imagem */}
@@ -569,6 +627,33 @@ const styles = StyleSheet.create({
   switchSubtitle: {
     fontSize: 12,
     lineHeight: 17,
+  },
+  infoCallout: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 10,
+    borderWidth: 1,
+    gap: 8,
+  },
+  infoCalloutText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+  },
+  toastPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    gap: 8,
+  },
+  toastPillText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '600',
   },
   errorBanner: {
     flexDirection: 'row',

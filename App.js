@@ -13,11 +13,23 @@ import { ONBOARDING_STORAGE_KEY, OnboardingScreen } from './src/screens/Onboardi
 import { authService } from './src/services/authService';
 
 function AppRootContent() {
-  const { colors, isSettingsReady, defaultAnonymous } = useAppSettings();
+  const { colors, isDark, isSettingsReady, defaultAnonymous } = useAppSettings();
   const [session, setSession] = useState(null);
   const [authInitialMode, setAuthInitialMode] = useState('login');
   const [onboardingDone, setOnboardingDone] = useState(false);
   const [bootReady, setBootReady] = useState(false);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    const bgHex = isDark ? '#121417' : '#F7F9FC';
+    const metaTheme = document.querySelector('meta[name="theme-color"]');
+    if (metaTheme) {
+      metaTheme.setAttribute('content', bgHex);
+    }
+    if (document.body) {
+      document.body.style.backgroundColor = isDark ? '#121417' : '#F1F3F4';
+    }
+  }, [isDark]);
 
   useEffect(() => {
     let active = true;
@@ -66,7 +78,7 @@ function AppRootContent() {
   if (!isSettingsReady || !bootReady) {
     return (
       <View style={[styles.loadingRoot, { backgroundColor: colors.background }]}>
-        <StatusBar style="dark" />
+        <StatusBar style={isDark ? 'light' : 'dark'} />
         <ActivityIndicator size="large" color={colors.primary} />
         <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
           Carregando Olho na Via...
@@ -77,7 +89,7 @@ function AppRootContent() {
 
   return (
     <>
-      <StatusBar style="dark" />
+      <StatusBar style={isDark ? 'light' : 'dark'} />
       {!onboardingDone ? (
         <OnboardingScreen onComplete={() => setOnboardingDone(true)} />
       ) : session ? (

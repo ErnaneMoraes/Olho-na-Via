@@ -1,5 +1,5 @@
 import { FontAwesome6 } from '@expo/vector-icons';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   LayoutAnimation,
   Modal,
@@ -40,41 +40,72 @@ if (
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-function AccordionSection({ title, icon, isOpen, onToggle, children }) {
+function AccordionSection({
+  title,
+  icon,
+  isOpen,
+  onToggle,
+  variant = 'default',
+  children,
+}) {
   const { colors, radiusCard, borderWidth, cardShadow } = useAppSettings();
+  const isDanger = variant === 'danger';
 
   return (
     <View
       style={[
         styles.accordionCard,
-        cardShadow,
+        !isDanger ? cardShadow : styles.noShadowCard,
         {
-          backgroundColor: colors.card,
-          borderColor: colors.border,
+          backgroundColor: isDanger ? colors.adminCardBg : colors.card,
+          borderColor: isDanger ? colors.adminCardBorder : colors.border,
           borderWidth,
-          borderRadius: radiusCard,
+          borderRadius: isDanger ? 20 : radiusCard,
         },
       ]}
     >
       <Pressable
         onPress={onToggle}
-        android_ripple={{ color: colors.accentSoft }}
+        android_ripple={{ color: isDanger ? colors.dangerSoft : colors.accentSoft }}
         style={styles.accordionHeader}
       >
         <View style={styles.accordionHeaderLeft}>
-          <View style={[styles.accordionIcon, { backgroundColor: colors.accentSoft }]}>
-            <FontAwesome6 name={icon} size={15} color={colors.primary} />
+          <View
+            style={[
+              styles.accordionIcon,
+              { backgroundColor: isDanger ? colors.dangerSoft : colors.accentSoft },
+            ]}
+          >
+            <FontAwesome6
+              name={icon}
+              size={15}
+              color={isDanger ? colors.adminCardTitle : colors.primary}
+            />
           </View>
-          <Text style={[styles.accordionTitle, { color: colors.text }]}>{title}</Text>
+          <Text
+            style={[
+              styles.accordionTitle,
+              { color: isDanger ? colors.adminCardTitle : colors.text },
+            ]}
+          >
+            {title}
+          </Text>
         </View>
-        <FontAwesome6
-          name={isOpen ? 'chevron-up' : 'chevron-down'}
-          size={14}
-          color={colors.textSecondary}
-        />
+        <View style={{ transform: [{ rotate: isOpen ? '180deg' : '0deg' }] }}>
+          <FontAwesome6
+            name="chevron-down"
+            size={14}
+            color={isDanger ? colors.adminCardTitle : colors.textSecondary}
+          />
+        </View>
       </Pressable>
       {isOpen ? (
-        <View style={[styles.accordionBody, { borderTopColor: colors.dividerColor }]}>
+        <View
+          style={[
+            styles.accordionBody,
+            { borderTopColor: isDanger ? colors.adminCardBorder : colors.dividerColor },
+          ]}
+        >
           {children}
         </View>
       ) : null}
@@ -86,18 +117,21 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
   const insets = useSafeAreaInsets();
   const {
     colors,
+    darkMode,
+    toggleDarkMode,
     defaultAnonymous,
     setDefaultAnonymous,
     cameraShutterSound,
     setCameraShutterSound,
-    radiusCard,
     radiusInput,
     borderWidth,
     cardShadow,
     typography,
   } = useAppSettings();
 
-  const [openSection, setOpenSection] = useState('privacy');
+  const [openSection, setOpenSection] = useState(null);
+  const [anonToastMsg, setAnonToastMsg] = useState('');
+  const anonToastTimerRef = useRef(null);
   const [logs, setLogs] = useState([]);
   const [diagFeedback, setDiagFeedback] = useState('');
   const [showQuickGuide, setShowQuickGuide] = useState(false);
@@ -120,6 +154,26 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
     ? 16
     : Math.max(insets.top, Platform.OS === 'android' ? StatusBar.currentHeight || 24 : 12) + 8;
 
+  const triggerAnonToast = () => {
+    if (anonToastTimerRef.current) {
+      clearTimeout(anonToastTimerRef.current);
+    }
+    setAnonToastMsg(
+      'Modo anônimo ativado: sua identidade continua visível apenas para administradores.'
+    );
+    anonToastTimerRef.current = setTimeout(() => {
+      setAnonToastMsg('');
+    }, 4000);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (anonToastTimerRef.current) {
+        clearTimeout(anonToastTimerRef.current);
+      }
+    };
+  }, []);
+
   const loadLogs = useCallback(async () => {
     const items = await getDiagnosticLogs();
     setLogs(items);
@@ -127,6 +181,8 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
 
   useEffect(() => {
     if (visible) {
+      setOpenSection(null);
+      setAnonToastMsg('');
       if (isAdmin) {
         loadLogs();
       }
@@ -252,19 +308,43 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
           <FontAwesome6 name="gear" size={18} color={colors.primary} />
           <Text style={[styles.headerTitle, { color: colors.text }]}>Configurações</Text>
         </View>
-        <Pressable
-          onPress={onClose}
-          hitSlop={10}
-          style={[
-            styles.closeIconBtn,
-            {
-              backgroundColor: colors.surfaceMuted,
-              borderRadius: 20,
-            },
-          ]}
-        >
-          <FontAwesome6 name="xmark" size={16} color={colors.text} />
-        </Pressable>
+        <View style={styles.headerActionsRow}>
+          <Pressable
+            onPress={toggleDarkMode}
+            hitSlop={8}
+            accessibilityLabel={
+              darkMode ? 'Alternar para modo claro' : 'Alternar para modo escuro'
+            }
+            style={[
+              styles.closeIconBtn,
+              {
+                backgroundColor: colors.surfaceMuted,
+                borderRadius: 20,
+              },
+            ]}
+          >
+            <FontAwesome6
+              name={darkMode ? 'sun' : 'moon'}
+              size={16}
+              color={darkMode ? colors.warning : colors.primary}
+            />
+          </Pressable>
+
+          <Pressable
+            onPress={onClose}
+            hitSlop={10}
+            accessibilityLabel="Fechar configurações"
+            style={[
+              styles.closeIconBtn,
+              {
+                backgroundColor: colors.surfaceMuted,
+                borderRadius: 20,
+              },
+            ]}
+          >
+            <FontAwesome6 name="xmark" size={16} color={colors.text} />
+          </Pressable>
+        </View>
       </View>
 
       <ScrollView
@@ -273,6 +353,40 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
         showsVerticalScrollIndicator={false}
       >
           <View style={styles.accordionsContainer}>
+            {/* 0. Perfil & Apelido */}
+            <AccordionSection
+              title="Perfil & Apelido"
+              icon="user"
+              isOpen={openSection === 'profile'}
+              onToggle={() => toggleSection('profile')}
+            >
+              <View style={styles.subsectionList}>
+                <View
+                  style={[
+                    styles.subCard,
+                    {
+                      backgroundColor: colors.surfaceMuted,
+                      borderColor: colors.border,
+                      borderWidth: 1,
+                      borderRadius: radiusInput,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.subCardTitle, { color: colors.text }]}>
+                    Apelido: {session?.nickname || 'Visitante'}
+                  </Text>
+                  <Text style={[styles.helperText, { color: colors.textSecondary }]}>
+                    Tipo de conta:{' '}
+                    {session?.isDemo
+                      ? 'Modo Demonstração (Somente Leitura)'
+                      : isAdmin
+                        ? 'Administrador Autorizado'
+                        : 'Cidadão Autenticado'}
+                  </Text>
+                </View>
+              </View>
+            </AccordionSection>
+
             {/* 1. Privacidade e LGPD */}
             <AccordionSection
               title="Privacidade e Postagem (LGPD)"
@@ -304,23 +418,60 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
                     </Text>
                   </View>
                 ) : (
-                  <View style={styles.switchRow}>
-                    <View style={styles.switchInfo}>
-                      <Text style={[styles.switchTitle, { color: colors.text }]}>
-                        Postar como Anônimo por padrão
-                      </Text>
-                      <Text style={[styles.helperText, { color: colors.textSecondary }]}>
-                        Quando ativado, seus relatos exibem "Usuário Anônimo" em vez do seu Apelido
-                        no mapa.
-                      </Text>
+                  <>
+                    <View style={styles.switchRow}>
+                      <View style={styles.switchInfo}>
+                        <Text style={[styles.switchTitle, { color: colors.text }]}>
+                          Postar como Anônimo por padrão
+                        </Text>
+                        <Text style={[styles.helperText, { color: colors.textSecondary }]}>
+                          Seu apelido ficará oculto para o público ('Usuário Anônimo'), mas
+                          administradores podem visualizar sua identidade para moderação.
+                        </Text>
+                      </View>
+                      <Switch
+                        value={defaultAnonymous}
+                        onValueChange={(nextVal) => {
+                          if (nextVal && !defaultAnonymous) {
+                            triggerAnonToast();
+                          } else if (!nextVal) {
+                            setAnonToastMsg('');
+                          }
+                          setDefaultAnonymous(nextVal);
+                        }}
+                        trackColor={{ false: colors.border, true: colors.primary }}
+                        thumbColor="#FFFFFF"
+                      />
                     </View>
-                    <Switch
-                      value={defaultAnonymous}
-                      onValueChange={setDefaultAnonymous}
-                      trackColor={{ false: colors.border, true: colors.primary }}
-                      thumbColor="#FFFFFF"
-                    />
-                  </View>
+
+                    {defaultAnonymous ? (
+                      <View
+                        style={[
+                          styles.infoCallout,
+                          {
+                            backgroundColor: colors.infoBannerBg,
+                            borderColor: colors.infoBannerBorder,
+                            borderRadius: radiusInput,
+                          },
+                        ]}
+                      >
+                        <FontAwesome6 name="circle-info" size={14} color={colors.primary} />
+                        <Text style={[styles.infoCalloutText, { color: colors.infoBannerText }]}>
+                          Aviso de transparência: sua identidade continua visível apenas para
+                          administradores do sistema para prevenção de abusos e moderação.
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    {anonToastMsg ? (
+                      <View style={[styles.toastPill, { backgroundColor: colors.text }]}>
+                        <FontAwesome6 name="circle-info" size={12} color={colors.background} />
+                        <Text style={[styles.toastPillText, { color: colors.background }]}>
+                          {anonToastMsg}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </>
                 )}
 
                 <View
@@ -722,27 +873,28 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
                 ) : null}
               </View>
             </AccordionSection>
-          </View>
-
-          {isAdmin ? (
-            <View style={styles.adminEntryCard}>
-              <View style={styles.adminEntryHeader}>
-                <FontAwesome6 name="gavel" size={16} color="#B3261E" />
-                <Text style={styles.adminEntryTitle}>
-                  Área Restrita — Moderação Administrativa
-                </Text>
-              </View>
-              <Text style={[styles.helperText, { color: colors.textSecondary }]}>
-                Gerencie registros, fotos no Storage, comentários, perfis, contas e auditoria.
-              </Text>
-              <DangerButton
-                compact
-                label="Abrir Painel Administrativo"
+            {isAdmin ? (
+              <AccordionSection
+                title="Área Restrita — Moderação Administrativa"
                 icon="gavel"
-                onPress={() => setShowAdminPanel(true)}
-              />
-            </View>
-          ) : null}
+                variant="danger"
+                isOpen={openSection === 'admin'}
+                onToggle={() => toggleSection('admin')}
+              >
+                <View style={styles.subsectionList}>
+                  <Text style={[styles.helperText, { color: colors.adminCardTitle }]}>
+                    Gerencie registros, fotos no Storage, comentários, perfis, contas e auditoria.
+                  </Text>
+                  <DangerButton
+                    compact
+                    label="Abrir Painel Administrativo"
+                    icon="gavel"
+                    onPress={() => setShowAdminPanel(true)}
+                  />
+                </View>
+              </AccordionSection>
+            ) : null}
+          </View>
 
           <View style={styles.footerCta}>
             <PrimaryButton label="Concluir" icon="check" onPress={onClose} />
@@ -847,6 +999,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
+  headerActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   headerTitle: {
     fontSize: 20,
     fontWeight: '700',
@@ -856,6 +1013,39 @@ const styles = StyleSheet.create({
     height: 36,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  noShadowCard: {
+    elevation: 0,
+    shadowColor: 'transparent',
+    shadowOpacity: 0,
+    shadowRadius: 0,
+  },
+  infoCallout: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 10,
+    borderWidth: 1,
+    gap: 8,
+  },
+  infoCalloutText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+  },
+  toastPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    gap: 8,
+  },
+  toastPillText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '600',
   },
   scrollContent: {
     paddingBottom: 24,
