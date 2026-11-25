@@ -13,6 +13,7 @@ import {
   Text,
   TextInput,
   UIManager,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -110,10 +111,14 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
   const [passwordError, setPasswordError] = useState('');
   const [passwordSuccess, setPasswordSuccess] = useState('');
 
+  const { width: windowWidth } = useWindowDimensions();
+  const isWeb = Platform.OS === 'web';
+  const isCompactWidth = windowWidth < 600;
   const isAdmin = Boolean(session?.isAdmin && !session?.isDemo);
 
-  const topSafePadding =
-    Math.max(insets.top, Platform.OS === 'android' ? StatusBar.currentHeight || 24 : 12) + 8;
+  const topSafePadding = isWeb
+    ? 16
+    : Math.max(insets.top, Platform.OS === 'android' ? StatusBar.currentHeight || 24 : 12) + 8;
 
   const loadLogs = useCallback(async () => {
     const items = await getDiagnosticLogs();
@@ -230,64 +235,43 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
 
   const deviceCtx = getAnonymousDeviceContext();
 
-  return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      onRequestClose={() => {
-        if (showAdminPanel) {
-          setShowAdminPanel(false);
-        } else if (showQuickGuide) {
-          setShowQuickGuide(false);
-        } else {
-          onClose();
-        }
-      }}
+  const settingsBody = (
+    <View
+      style={[
+        isWeb ? styles.screenCardWeb : styles.screen,
+        {
+          backgroundColor: colors.background,
+          paddingTop: topSafePadding,
+          paddingBottom: isWeb ? 16 : Math.max(12, insets.bottom),
+        },
+        isWeb ? [cardShadow, { borderColor: colors.border, borderWidth }] : null,
+      ]}
     >
-      {showAdminPanel && session?.isAdmin ? (
-        <AdminPanelModal
-          inline
-          session={session}
-          onClose={() => setShowAdminPanel(false)}
-          onModerationChange={onModerationChange}
-        />
-      ) : showQuickGuide ? (
-        <OnboardingScreen isReplay onComplete={() => setShowQuickGuide(false)} />
-      ) : (
-      <View
-        style={[
-          styles.screen,
-          {
-            backgroundColor: colors.background,
-            paddingTop: topSafePadding,
-            paddingBottom: Math.max(12, insets.bottom),
-          },
-        ]}
-      >
-        <View style={[SharedStyles.contentContainer, styles.header]}>
-          <View style={styles.headerTitleWrap}>
-            <FontAwesome6 name="gear" size={18} color={colors.primary} />
-            <Text style={[styles.headerTitle, { color: colors.text }]}>Configurações</Text>
-          </View>
-          <Pressable
-            onPress={onClose}
-            hitSlop={10}
-            style={[
-              styles.closeIconBtn,
-              {
-                backgroundColor: colors.surfaceMuted,
-                borderRadius: 20,
-              },
-            ]}
-          >
-            <FontAwesome6 name="xmark" size={16} color={colors.text} />
-          </Pressable>
+      <View style={[SharedStyles.contentContainer, styles.header]}>
+        <View style={styles.headerTitleWrap}>
+          <FontAwesome6 name="gear" size={18} color={colors.primary} />
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Configurações</Text>
         </View>
-
-        <ScrollView
-          contentContainerStyle={[SharedStyles.contentContainer, styles.scrollContent]}
-          showsVerticalScrollIndicator={false}
+        <Pressable
+          onPress={onClose}
+          hitSlop={10}
+          style={[
+            styles.closeIconBtn,
+            {
+              backgroundColor: colors.surfaceMuted,
+              borderRadius: 20,
+            },
+          ]}
         >
+          <FontAwesome6 name="xmark" size={16} color={colors.text} />
+        </Pressable>
+      </View>
+
+      <ScrollView
+        style={isWeb ? styles.webScroll : undefined}
+        contentContainerStyle={[SharedStyles.contentContainer, styles.scrollContent]}
+        showsVerticalScrollIndicator={false}
+      >
           <View style={styles.accordionsContainer}>
             {/* 1. Privacidade e LGPD */}
             <AccordionSection
@@ -764,12 +748,89 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
           </View>
         </ScrollView>
       </View>
+  );
+
+  return (
+    <Modal
+      visible={visible}
+      transparent={isWeb}
+      animationType={isWeb ? 'fade' : 'slide'}
+      onRequestClose={() => {
+        if (showAdminPanel) {
+          setShowAdminPanel(false);
+        } else if (showQuickGuide) {
+          setShowQuickGuide(false);
+        } else {
+          onClose();
+        }
+      }}
+    >
+      {showQuickGuide ? (
+        <View style={[styles.fullScreenWrap, { backgroundColor: colors.background }]}>
+          <OnboardingScreen isReplay onComplete={() => setShowQuickGuide(false)} />
+        </View>
+      ) : showAdminPanel && session?.isAdmin ? (
+        isWeb ? (
+          <View
+            style={[
+              styles.webBackdrop,
+              { justifyContent: isCompactWidth ? 'flex-end' : 'center' },
+            ]}
+          >
+            <AdminPanelModal
+              inline
+              session={session}
+              onClose={() => setShowAdminPanel(false)}
+              onModerationChange={onModerationChange}
+            />
+          </View>
+        ) : (
+          <AdminPanelModal
+            inline
+            session={session}
+            onClose={() => setShowAdminPanel(false)}
+            onModerationChange={onModerationChange}
+          />
+        )
+      ) : isWeb ? (
+        <View
+          style={[
+            styles.webBackdrop,
+            { justifyContent: isCompactWidth ? 'flex-end' : 'center' },
+          ]}
+        >
+          {settingsBody}
+        </View>
+      ) : (
+        settingsBody
       )}
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  fullScreenWrap: {
+    flex: 1,
+  },
+  webBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  screenCardWeb: {
+    width: '100%',
+    maxWidth: 520,
+    maxHeight: '88dvh',
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    overflow: 'hidden',
+  },
+  webScroll: {
+    flexGrow: 0,
+    flexShrink: 1,
+  },
   screen: {
     flex: 1,
     paddingHorizontal: 16,

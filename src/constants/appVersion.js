@@ -1,8 +1,17 @@
 export const APP_NAME = 'Olho na Via';
-export const APP_VERSION = '1.6.2';
-export const APP_BUILD_TAG = '2026.11.25-password-management';
+export const APP_VERSION = '1.6.3';
+export const APP_BUILD_TAG = '2026.11.25-mobile-web-native-feel';
 
 export const APP_CHANGELOG = [
+  {
+    version: '1.6.3',
+    date: '25/11/2026',
+    title: 'Escala Mobile Web 1:1 e Modais Ajustados ao Conteúdo',
+    highlights: [
+      'Garantida meta tag viewport (width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover) em dist/index.html, 404.html e runtime Web.',
+      'Ajustados PotholeDetailModal, SettingsModal e AdminPanelModal para abraçarem a altura natural do conteúdo (maxHeight: 88dvh) sem faixas brancas vazias no navegador.',
+    ],
+  },
   {
     version: '1.6.2',
     date: '25/11/2026',

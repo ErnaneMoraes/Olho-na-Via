@@ -2,7 +2,7 @@
   "expo": {
     "name": "Olho na Via",
     "slug": "olho-na-via",
-    "version": "1.6.2",
+    "version": "1.6.3",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
@@ -40,6 +40,12 @@
       ],
       "expo-font",
       "expo-status-bar"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "291de346-9779-4959-b944-6647c0a78258"
+      }
+    },
+    "owner": "moraesernane"
   }
 }

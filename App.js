@@ -107,6 +107,24 @@ export default function App() {
 
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+
+    const ensureMeta = (name, content) => {
+      let tag = document.querySelector(`meta[name="${name}"]`);
+      if (!tag) {
+        tag = document.createElement('meta');
+        tag.setAttribute('name', name);
+        document.head.appendChild(tag);
+      }
+      tag.setAttribute('content', content);
+    };
+
+    ensureMeta(
+      'viewport',
+      'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover'
+    );
+    ensureMeta('mobile-web-app-capable', 'yes');
+    ensureMeta('theme-color', '#F7F9FC');
+
     const styleId = 'olhonavia-fa6-fonts';
     if (document.getElementById(styleId)) return;
 

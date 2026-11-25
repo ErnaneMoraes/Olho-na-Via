@@ -4,7 +4,6 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
-  Dimensions,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -16,6 +15,7 @@ import {
   Switch,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -106,7 +106,9 @@ export function PotholeDetailModal({
     notifyDataRestored,
   } = useAppSettings();
 
-  const windowHeight = Dimensions.get('window').height;
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const isWeb = Platform.OS === 'web';
+  const isCompactWidth = windowWidth < 600;
   const sheetTranslateY = useRef(new Animated.Value(windowHeight)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
   const isClosingRef = useRef(false);
@@ -452,13 +454,25 @@ export function PotholeDetailModal({
       statusBarTranslucent
       onRequestClose={handleRequestClose}
     >
-      <View style={styles.overlayRoot}>
+      <View
+        style={[
+          styles.overlayRoot,
+          isWeb
+            ? {
+                paddingHorizontal: 16,
+                paddingBottom: isCompactWidth ? 12 : 20,
+                paddingTop: 16,
+                justifyContent: isCompactWidth ? 'flex-end' : 'center',
+              }
+            : null,
+        ]}
+      >
         {/* Backdrop escuro semitransparente */}
         <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]}>
           <Pressable style={StyleSheet.absoluteFill} onPress={handleRequestClose} />
         </Animated.View>
 
-        {/* Bottom Sheet 85% Material You */}
+        {/* Bottom Sheet / Cartão adaptável ao conteúdo */}
         <Animated.View
           style={[
             styles.sheetContainer,
@@ -466,12 +480,15 @@ export function PotholeDetailModal({
             {
               backgroundColor: colors.background,
               borderColor: colors.border,
+              maxHeight: isWeb ? '88dvh' : '90%',
+              borderBottomLeftRadius: isWeb ? 24 : 0,
+              borderBottomRightRadius: isWeb ? 24 : 0,
               transform: [{ translateY: sheetTranslateY }],
             },
           ]}
         >
           <KeyboardAvoidingView
-            style={styles.flexOne}
+            style={styles.sheetInner}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           >
             {/* Zona exclusiva de arraste no topo (alça + cabeçalho) */}
@@ -512,10 +529,11 @@ export function PotholeDetailModal({
             </View>
 
             <ScrollView
+              style={styles.sheetScroll}
               contentContainerStyle={[
                 SharedStyles.contentContainer,
                 styles.scrollBody,
-                { paddingBottom: Math.max(28, insets.bottom + 18) },
+                { paddingBottom: Math.max(24, insets.bottom + 16) },
               ]}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
@@ -1138,13 +1156,20 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.45)',
   },
   sheetContainer: {
-    height: '85%',
     width: '100%',
     maxWidth: 520,
     alignSelf: 'center',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     overflow: 'hidden',
+  },
+  sheetInner: {
+    flexShrink: 1,
+    flexGrow: 0,
+  },
+  sheetScroll: {
+    flexGrow: 0,
+    flexShrink: 1,
   },
   flexOne: {
     flex: 1,

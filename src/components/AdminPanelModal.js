@@ -12,6 +12,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -131,8 +132,13 @@ export function AdminPanelModal({
   const [resetBusy, setResetBusy] = useState(false);
   const [resetError, setResetError] = useState('');
 
-  const topSafePadding =
-    Math.max(insets.top, Platform.OS === 'android' ? StatusBar.currentHeight || 24 : 12) + 8;
+  const { width: windowWidth } = useWindowDimensions();
+  const isWeb = Platform.OS === 'web';
+  const isCompactWidth = windowWidth < 600;
+
+  const topSafePadding = isWeb
+    ? 16
+    : Math.max(insets.top, Platform.OS === 'android' ? StatusBar.currentHeight || 24 : 12) + 8;
 
   const isAdmin = Boolean(session?.isAdmin);
 
@@ -682,12 +688,14 @@ export function AdminPanelModal({
   const content = (
     <View
       style={[
-        styles.screen,
+        isWeb ? styles.screenCardWeb : styles.screen,
         {
           backgroundColor: colors.background,
           paddingTop: topSafePadding,
-          paddingBottom: Math.max(12, insets.bottom),
+          paddingBottom: isWeb ? 16 : Math.max(12, insets.bottom),
+          minHeight: isWeb && passwordTargetProfile ? 320 : undefined,
         },
+        isWeb ? [cardShadow, { borderColor: colors.border, borderWidth }] : null,
       ]}
     >
       <View style={[SharedStyles.contentContainer, styles.header]}>
@@ -720,6 +728,7 @@ export function AdminPanelModal({
       {isAdmin ? renderTabs() : null}
 
       <ScrollView
+        style={isWeb ? styles.webScroll : undefined}
         contentContainerStyle={[SharedStyles.contentContainer, styles.scrollBody]}
         showsVerticalScrollIndicator={false}
       >
@@ -825,13 +834,48 @@ export function AdminPanelModal({
   }
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      {content}
+    <Modal
+      visible={visible}
+      transparent={isWeb}
+      animationType={isWeb ? 'fade' : 'slide'}
+      onRequestClose={onClose}
+    >
+      {isWeb ? (
+        <View
+          style={[
+            styles.webBackdrop,
+            { justifyContent: isCompactWidth ? 'flex-end' : 'center' },
+          ]}
+        >
+          {content}
+        </View>
+      ) : (
+        content
+      )}
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  webBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  screenCardWeb: {
+    width: '100%',
+    maxWidth: 520,
+    maxHeight: '88dvh',
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    overflow: 'hidden',
+  },
+  webScroll: {
+    flexGrow: 0,
+    flexShrink: 1,
+  },
   screen: {
     flex: 1,
     paddingHorizontal: 16,

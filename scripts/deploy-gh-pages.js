@@ -84,6 +84,40 @@ function flattenAndRewriteVectorIconFonts(baseUrl) {
   );
 }
 
+function ensureMobileViewportMeta(indexHtmlPath) {
+  let html = fs.readFileSync(indexHtmlPath, 'utf8');
+
+  const viewportTag =
+    '<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />';
+  const webAppCapableTag = '<meta name="mobile-web-app-capable" content="yes" />';
+  const themeColorTag = '<meta name="theme-color" content="#F7F9FC" />';
+
+  if (/<meta[^>]*name=["']viewport["'][^>]*>/i.test(html)) {
+    html = html.replace(/<meta[^>]*name=["']viewport["'][^>]*>/i, viewportTag);
+  } else {
+    html = html.replace(/<head([^>]*)>/i, `<head$1>\n    ${viewportTag}`);
+  }
+
+  if (/<meta[^>]*name=["']mobile-web-app-capable["'][^>]*>/i.test(html)) {
+    html = html.replace(/<meta[^>]*name=["']mobile-web-app-capable["'][^>]*>/i, webAppCapableTag);
+  } else {
+    html = html.replace(/<\/title>/i, `</title>\n    ${webAppCapableTag}`);
+  }
+
+  if (/<meta[^>]*name=["']theme-color["'][^>]*>/i.test(html)) {
+    html = html.replace(/<meta[^>]*name=["']theme-color["'][^>]*>/i, themeColorTag);
+  } else {
+    html = html.replace(/<\/title>/i, `</title>\n    ${themeColorTag}`);
+  }
+
+  if (!html.includes('viewport-fit=cover')) {
+    throw new Error('Falha ao garantir meta tag viewport mobile em dist/index.html.');
+  }
+
+  fs.writeFileSync(indexHtmlPath, html, 'utf8');
+  console.log('[Olho na Via] Meta tags viewport mobile (1:1) aplicadas em dist/index.html.');
+}
+
 function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) {
     throw new Error('Arquivo .env não encontrado na raiz do projeto.');
@@ -198,6 +232,8 @@ async function main() {
       `[Olho na Via] Aviso: dist/index.html não contém referências com prefixo "${baseUrl}/_expo/". Verifique experiments.baseUrl.`
     );
   }
+
+  ensureMobileViewportMeta(indexHtmlPath);
 
   fs.writeFileSync(path.join(DIST_DIR, '.nojekyll'), '');
   fs.copyFileSync(indexHtmlPath, path.join(DIST_DIR, '404.html'));
