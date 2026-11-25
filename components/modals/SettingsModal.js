@@ -100,6 +100,8 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
   const [showQuickGuide, setShowQuickGuide] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
 
+  const isAdmin = Boolean(session?.isAdmin && !session?.isDemo);
+
   const topSafePadding =
     Math.max(insets.top, Platform.OS === 'android' ? StatusBar.currentHeight || 24 : 12) + 8;
 
@@ -110,12 +112,14 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
 
   useEffect(() => {
     if (visible) {
-      loadLogs();
+      if (isAdmin) {
+        loadLogs();
+      }
       setDiagFeedback('');
       setShowQuickGuide(false);
       setShowAdminPanel(false);
     }
-  }, [visible, loadLogs]);
+  }, [visible, isAdmin, loadLogs]);
 
   const toggleSection = (key) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -298,9 +302,9 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
                   ]}
                 >
                   <Text style={[styles.helperText, { color: colors.textSecondary }]}>
-                    Compromisso LGPD: quando o modo anônimo está ativo, nenhum identificador de
-                    conta ou apelido é gravado no banco. Nenhum dado pessoal, e-mail ou coordenada
-                    GPS é enviado em registros de diagnóstico.
+                    Compromisso de Privacidade (LGPD): quando o modo anônimo está ativo, sua
+                    identidade não é exibida publicamente no mapa, mantendo vínculo interno restrito
+                    à moderação contra abusos.
                   </Text>
                 </View>
               </View>
@@ -333,140 +337,16 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
               </View>
             </AccordionSection>
 
-            {/* 3. Diagnóstico Anônimo (LGPD) */}
-            <AccordionSection
-              title="Diagnóstico Anônimo (LGPD)"
-              icon="stethoscope"
-              isOpen={openSection === 'diagnostics'}
-              onToggle={() => toggleSection('diagnostics')}
-            >
-              <View style={styles.subsectionList}>
-                <View
-                  style={[
-                    styles.subCard,
-                    {
-                      backgroundColor: colors.surfaceMuted,
-                      borderColor: colors.border,
-                      borderWidth: 1,
-                      borderRadius: radiusInput,
-                    },
-                  ]}
-                >
-                  <Text style={[styles.subCardTitle, { color: colors.text }]}>
-                    1. Ambiente e Versão (Sem PII)
-                  </Text>
-                  <Text
-                    style={[
-                      styles.monoText,
-                      { color: colors.textSecondary, fontVariant: typography.fontVariant },
-                    ]}
-                  >
-                    {`${deviceCtx.appName} v${deviceCtx.appVersion} (${deviceCtx.buildTag})\n`}
-                    {`Sistema: ${deviceCtx.platform} ${deviceCtx.osVersion} • Tela: ${deviceCtx.screenWidth}x${deviceCtx.screenHeight}px`}
-                  </Text>
-                </View>
-
-                <View style={styles.grid2x2}>
-                  <View style={styles.gridRow}>
-                    <SecondaryButton
-                      compact
-                      icon="rotate"
-                      label="Atualizar Logs"
-                      onPress={loadLogs}
-                      style={styles.gridCell}
-                    />
-                    <SecondaryButton
-                      compact
-                      icon="file-lines"
-                      label="Exportar Texto"
-                      onPress={handleExportLogs}
-                      style={styles.gridCell}
-                    />
-                  </View>
-                  <View style={styles.gridRow}>
-                    <SecondaryButton
-                      compact
-                      icon="wand-magic-sparkles"
-                      label="Registrar Teste"
-                      onPress={handleRecordSampleEvent}
-                      style={styles.gridCell}
-                    />
-                    <SecondaryButton
-                      compact
-                      icon="trash-can"
-                      label="Limpar Logs"
-                      onPress={handleClearLogs}
-                      style={styles.gridCell}
-                    />
-                  </View>
-                </View>
-
-                {diagFeedback ? (
-                  <Text style={[styles.feedbackText, { color: colors.primary }]}>
-                    {diagFeedback}
-                  </Text>
-                ) : null}
-
-                <View
-                  style={[
-                    styles.subCard,
-                    {
-                      backgroundColor: colors.surfaceMuted,
-                      borderColor: colors.border,
-                      borderWidth: 1,
-                      borderRadius: radiusInput,
-                    },
-                  ]}
-                >
-                  <Text style={[styles.subCardTitle, { color: colors.text }]}>
-                    2. Eventos Locais Recentes ({logs.length})
-                  </Text>
-                  {logs.length === 0 ? (
-                    <Text style={[styles.helperText, { color: colors.textSecondary }]}>
-                      Nenhum evento registrado até o momento.
-                    </Text>
-                  ) : (
-                    logs.slice(0, 8).map((entry) => (
-                      <View
-                        key={entry.id}
-                        style={[styles.logRow, { borderTopColor: colors.dividerColor }]}
-                      >
-                        <Text style={[styles.logCategory, { color: colors.primary }]}>
-                          [{entry.category}]
-                        </Text>
-                        <Text style={[styles.logMessage, { color: colors.text }]}>
-                          {entry.message}
-                        </Text>
-                      </View>
-                    ))
-                  )}
-                </View>
-              </View>
-            </AccordionSection>
-
-            {/* 3. Sobre o Aplicativo */}
-            <AccordionSection
-              title="Sobre o Olho na Via"
-              icon="circle-info"
-              isOpen={openSection === 'about'}
-              onToggle={() => toggleSection('about')}
-            >
-              <View style={styles.subsectionList}>
-                <Text style={[styles.subCardTitle, { color: colors.text }]}>
-                  {APP_NAME} — v{APP_VERSION}
-                </Text>
-                <Text style={[styles.helperText, { color: colors.textSecondary }]}>
-                  Compilação: {APP_BUILD_TAG} • Visual Material You
-                </Text>
-                <SecondaryButton
-                  compact
-                  label="Como funciona (Guia rápido)"
-                  icon="book-open"
-                  onPress={() => setShowQuickGuide(true)}
-                />
-                {APP_CHANGELOG.map((rel) => (
+            {/* 3. Diagnóstico Anônimo (somente administradores) */}
+            {isAdmin ? (
+              <AccordionSection
+                title="Diagnóstico Anônimo (LGPD)"
+                icon="stethoscope"
+                isOpen={openSection === 'diagnostics'}
+                onToggle={() => toggleSection('diagnostics')}
+              >
+                <View style={styles.subsectionList}>
                   <View
-                    key={rel.version}
                     style={[
                       styles.subCard,
                       {
@@ -478,35 +358,181 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
                     ]}
                   >
                     <Text style={[styles.subCardTitle, { color: colors.text }]}>
-                      v{rel.version} ({rel.date}) — {rel.title}
+                      1. Ambiente e Versão (Sem PII)
                     </Text>
-                    {rel.highlights.map((hl, idx) => (
-                      <Text key={idx} style={[styles.helperText, { color: colors.textSecondary }]}>
-                        • {hl}
-                      </Text>
-                    ))}
+                    <Text
+                      style={[
+                        styles.monoText,
+                        { color: colors.textSecondary, fontVariant: typography.fontVariant },
+                      ]}
+                    >
+                      {`${deviceCtx.appName} v${deviceCtx.appVersion} (${deviceCtx.buildTag})\n`}
+                      {`Sistema: ${deviceCtx.platform} ${deviceCtx.osVersion} • Tela: ${deviceCtx.screenWidth}x${deviceCtx.screenHeight}px`}
+                    </Text>
                   </View>
-                ))}
+
+                  <View style={styles.grid2x2}>
+                    <View style={styles.gridRow}>
+                      <SecondaryButton
+                        compact
+                        icon="rotate"
+                        label="Atualizar Logs"
+                        onPress={loadLogs}
+                        style={styles.gridCell}
+                      />
+                      <SecondaryButton
+                        compact
+                        icon="file-lines"
+                        label="Exportar Texto"
+                        onPress={handleExportLogs}
+                        style={styles.gridCell}
+                      />
+                    </View>
+                    <View style={styles.gridRow}>
+                      <SecondaryButton
+                        compact
+                        icon="wand-magic-sparkles"
+                        label="Registrar Teste"
+                        onPress={handleRecordSampleEvent}
+                        style={styles.gridCell}
+                      />
+                      <SecondaryButton
+                        compact
+                        icon="trash-can"
+                        label="Limpar Logs"
+                        onPress={handleClearLogs}
+                        style={styles.gridCell}
+                      />
+                    </View>
+                  </View>
+
+                  {diagFeedback ? (
+                    <Text style={[styles.feedbackText, { color: colors.primary }]}>
+                      {diagFeedback}
+                    </Text>
+                  ) : null}
+
+                  <View
+                    style={[
+                      styles.subCard,
+                      {
+                        backgroundColor: colors.surfaceMuted,
+                        borderColor: colors.border,
+                        borderWidth: 1,
+                        borderRadius: radiusInput,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.subCardTitle, { color: colors.text }]}>
+                      2. Eventos Locais Recentes ({logs.length})
+                    </Text>
+                    {logs.length === 0 ? (
+                      <Text style={[styles.helperText, { color: colors.textSecondary }]}>
+                        Nenhum evento registrado até o momento.
+                      </Text>
+                    ) : (
+                      logs.slice(0, 8).map((entry) => (
+                        <View
+                          key={entry.id}
+                          style={[styles.logRow, { borderTopColor: colors.dividerColor }]}
+                        >
+                          <Text style={[styles.logCategory, { color: colors.primary }]}>
+                            [{entry.category}]
+                          </Text>
+                          <Text style={[styles.logMessage, { color: colors.text }]}>
+                            {entry.message}
+                          </Text>
+                        </View>
+                      ))
+                    )}
+                  </View>
+                </View>
+              </AccordionSection>
+            ) : null}
+
+            {/* 4. Sobre o Aplicativo */}
+            <AccordionSection
+              title="Sobre o Olho na Via"
+              icon="circle-info"
+              isOpen={openSection === 'about'}
+              onToggle={() => toggleSection('about')}
+            >
+              <View style={styles.subsectionList}>
+                <Text style={[styles.subCardTitle, { color: colors.text }]}>
+                  {APP_NAME} — v{APP_VERSION}
+                </Text>
+                <Text style={[styles.helperText, { color: colors.textSecondary }]}>
+                  O Olho na Via é uma plataforma colaborativa gratuita para mapear buracos e
+                  acompanhar reparos nas vias da sua cidade em tempo real.
+                </Text>
+                <View
+                  style={[
+                    styles.subCard,
+                    {
+                      backgroundColor: colors.surfaceMuted,
+                      borderColor: colors.border,
+                      borderWidth: 1,
+                      borderRadius: radiusInput,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.helperText, { color: colors.textSecondary }]}>
+                    • Registre buracos apenas quando estiver parado e em local seguro, longe do
+                    fluxo de veículos.{'\n'}
+                    • Confirme no mapa quando uma via continuar aberta ou já tiver sido tampada com
+                    uma foto atualizada.{'\n'}
+                    • Se preferir, ative o modo anônimo para ocultar seu apelido do público geral.
+                  </Text>
+                </View>
+                <PrimaryButton
+                  compact
+                  label="Ver Tutorial Inicial (Onboarding)"
+                  icon="book-open"
+                  onPress={() => setShowQuickGuide(true)}
+                />
+
+                {isAdmin ? (
+                  <>
+                    <Text style={[styles.helperText, { color: colors.textSecondary }]}>
+                      Histórico de Alterações (Changelog) • Compilação: {APP_BUILD_TAG}
+                    </Text>
+                    {APP_CHANGELOG.map((rel) => (
+                      <View
+                        key={rel.version}
+                        style={[
+                          styles.subCard,
+                          {
+                            backgroundColor: colors.surfaceMuted,
+                            borderColor: colors.border,
+                            borderWidth: 1,
+                            borderRadius: radiusInput,
+                          },
+                        ]}
+                      >
+                        <Text style={[styles.subCardTitle, { color: colors.text }]}>
+                          v{rel.version} ({rel.date}) — {rel.title}
+                        </Text>
+                        {rel.highlights.map((hl, idx) => (
+                          <Text
+                            key={idx}
+                            style={[styles.helperText, { color: colors.textSecondary }]}
+                          >
+                            • {hl}
+                          </Text>
+                        ))}
+                      </View>
+                    ))}
+                  </>
+                ) : null}
               </View>
             </AccordionSection>
           </View>
 
-          {session?.isAdmin ? (
-            <View
-              style={[
-                styles.adminEntryCard,
-                cardShadow,
-                {
-                  backgroundColor: colors.dangerSoft,
-                  borderColor: colors.danger,
-                  borderWidth,
-                  borderRadius: radiusCard,
-                },
-              ]}
-            >
+          {isAdmin ? (
+            <View style={styles.adminEntryCard}>
               <View style={styles.adminEntryHeader}>
-                <FontAwesome6 name="gavel" size={16} color={colors.danger} />
-                <Text style={[styles.adminEntryTitle, { color: colors.dangerText }]}>
+                <FontAwesome6 name="gavel" size={16} color="#B3261E" />
+                <Text style={styles.adminEntryTitle}>
                   Área Restrita — Moderação Administrativa
                 </Text>
               </View>
@@ -665,6 +691,14 @@ const styles = StyleSheet.create({
     marginTop: 14,
     padding: 14,
     gap: 10,
+    backgroundColor: '#FCE8E6',
+    borderWidth: 1,
+    borderColor: '#F5C2C0',
+    borderRadius: 20,
+    elevation: 0,
+    shadowColor: 'transparent',
+    shadowOpacity: 0,
+    shadowRadius: 0,
   },
   adminEntryHeader: {
     flexDirection: 'row',
@@ -674,6 +708,7 @@ const styles = StyleSheet.create({
   adminEntryTitle: {
     fontSize: 14,
     fontWeight: '700',
+    color: '#8C1D18',
   },
 });
 

@@ -26,7 +26,7 @@ create policy "Usuário atualiza o próprio perfil"
   to authenticated
   using (auth.uid() = id);
 
--- 2. Relatos de buracos (com suporte estrito a anonimato LGPD: user_id NULL e author_nickname NULL)
+-- 2. Relatos de buracos (exibe "Usuário Anônimo" ao público preservando user_id para moderação administrativa)
 create table if not exists public.potholes (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references auth.users(id) on delete set null,
@@ -42,7 +42,7 @@ create table if not exists public.potholes (
   confirmations integer not null default 1,
   created_at timestamptz not null default now(),
   constraint potholes_lgpd_anonymous_check check (
-    not is_anonymous or (user_id is null and author_nickname is null)
+    not is_anonymous or author_nickname is null or author_nickname = 'Usuário Anônimo'
   )
 );
 
@@ -55,12 +55,16 @@ create policy "Buracos visíveis para leitura pública"
   on public.potholes for select
   using (true);
 
-create policy "Usuários autenticados publicam buracos respeitando LGPD"
+create policy "Usuários autenticados publicam buracos mantendo vínculo interno"
   on public.potholes for insert
   to authenticated
   with check (
-    (is_anonymous = true and user_id is null and author_nickname is null)
-    or (is_anonymous = false and user_id = auth.uid())
+    user_id = auth.uid()
+    and (
+      not is_anonymous
+      or author_nickname is null
+      or author_nickname = 'Usuário Anônimo'
+    )
   );
 
 create policy "Usuários autenticados atualizam status do buraco"
@@ -82,7 +86,7 @@ create table if not exists public.pothole_updates (
   full_url text not null,
   created_at timestamptz not null default now(),
   constraint updates_lgpd_anonymous_check check (
-    not is_anonymous or (user_id is null and author_nickname is null)
+    not is_anonymous or author_nickname is null or author_nickname = 'Usuário Anônimo'
   )
 );
 
@@ -95,12 +99,16 @@ create policy "Verificações visíveis para leitura pública"
   on public.pothole_updates for select
   using (true);
 
-create policy "Usuários autenticados registram verificações respeitando LGPD"
+create policy "Usuários autenticados registram verificações mantendo vínculo interno"
   on public.pothole_updates for insert
   to authenticated
   with check (
-    (is_anonymous = true and user_id is null and author_nickname is null)
-    or (is_anonymous = false and user_id = auth.uid())
+    user_id = auth.uid()
+    and (
+      not is_anonymous
+      or author_nickname is null
+      or author_nickname = 'Usuário Anônimo'
+    )
   );
 
 -- 4. Bucket de Storage para miniaturas (thumbs/) e fotos originais (originals/)
@@ -141,6 +149,46 @@ as $$
     select 1 from public.app_admins where user_id = auth.uid()
   );
 $$;
+
+create or replace function public.is_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.is_app_admin();
+$$;
+
+-- RPC segura para administradores identificarem autores reais de publicações anônimas
+create or replace function public.admin_get_user_identities()
+returns table (
+  user_id uuid,
+  email text,
+  nickname text
+)
+language plpgsql
+stable
+security definer
+set search_path = public, auth
+as $$
+begin
+  if not public.is_admin() then
+    raise exception 'Acesso negado: somente administradores podem consultar identidades de autores.';
+  end if;
+
+  return query
+  select
+    u.id as user_id,
+    u.email::text as email,
+    coalesce(p.nickname, 'Cidadão')::text as nickname
+  from auth.users u
+  left join public.profiles p on p.id = u.id;
+end;
+$$;
+
+revoke all on function public.admin_get_user_identities() from public;
+grant execute on function public.admin_get_user_identities() to authenticated;
 
 create table if not exists public.admin_audit_logs (
   id uuid primary key default gen_random_uuid(),

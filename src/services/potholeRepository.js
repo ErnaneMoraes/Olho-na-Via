@@ -56,7 +56,7 @@ async function mapCloudVerificationRow(row) {
     note: row.note || '',
     isAnonymous: isAnon,
     authorNickname: isAnon ? 'Usuário Anônimo' : row.author_nickname || 'Cidadão',
-    authorUserId: isAnon ? null : row.user_id || null,
+    authorUserId: row.user_id || null,
     thumbUri: cachedThumb,
     remoteThumbUrl: row.thumb_url || null,
     fullUri: row.full_url || null,
@@ -81,7 +81,7 @@ async function mapCloudPotholeRow(row, updates = [], cachedThumbOverride = null)
     statusLabel: isFixed ? 'Tampado' : 'Aberto',
     isAnonymous: isAnon,
     authorNickname: isAnon ? 'Usuário Anônimo' : row.author_nickname || 'Cidadão',
-    authorUserId: isAnon ? null : row.user_id || null,
+    authorUserId: row.user_id || null,
     thumbUri: cachedThumb,
     remoteThumbUrl: row.thumb_url || null,
     fullUri: row.full_url || null,
@@ -166,7 +166,7 @@ export const LocalAsyncStoragePotholeAdapter = {
       authorNickname: anonymousFlag
         ? 'Usuário Anônimo'
         : String(authorNickname || 'Cidadão').trim(),
-      authorUserId: anonymousFlag ? null : authorUserId || null,
+      authorUserId: authorUserId || null,
       thumbUri,
       fullUri,
       createdAt: formatDateTimePtBr(now),
@@ -223,7 +223,7 @@ export const LocalAsyncStoragePotholeAdapter = {
       authorNickname: anonymousFlag
         ? 'Usuário Anônimo'
         : String(authorNickname || 'Cidadão').trim(),
-      authorUserId: anonymousFlag ? null : authorUserId || null,
+      authorUserId: authorUserId || null,
       thumbUri,
       fullUri,
       createdAt: formatDateTimePtBr(now),
@@ -441,12 +441,22 @@ export const SupabasePotholeAdapter = {
     const cleanStreet = String(streetAddress || '').trim() || 'Via localizada por GPS';
     const cleanNickname = String(authorNickname || 'Cidadão').trim();
 
+    let resolvedUserId = authorUserId || null;
+    if (!resolvedUserId && supabase) {
+      try {
+        const { data: userData } = await supabase.auth.getUser();
+        resolvedUserId = userData?.user?.id || null;
+      } catch {
+        // Segue sem alterar sessão caso leitura falhe pontualmente
+      }
+    }
+
     const uploaded = await potholeMediaStorage.uploadPhotoPair({ thumbUri, fullUri });
 
-    // Garantia estrita de anonimato LGPD: zera user_id e author_nickname antes de enviar à rede
+    // Exibe "Usuário Anônimo" ao público preservando user_id interno para moderação administrativa
     const insertPayload = {
-      user_id: anonymousFlag ? null : authorUserId || null,
-      author_nickname: anonymousFlag ? null : cleanNickname,
+      user_id: resolvedUserId,
+      author_nickname: anonymousFlag ? 'Usuário Anônimo' : cleanNickname,
       is_anonymous: anonymousFlag,
       latitude,
       longitude,
@@ -513,13 +523,23 @@ export const SupabasePotholeAdapter = {
     const cleanNote = String(note || '').trim();
     const cleanNickname = String(authorNickname || 'Cidadão').trim();
 
+    let resolvedUserId = authorUserId || null;
+    if (!resolvedUserId && supabase) {
+      try {
+        const { data: userData } = await supabase.auth.getUser();
+        resolvedUserId = userData?.user?.id || null;
+      } catch {
+        // Segue sem alterar sessão caso leitura falhe pontualmente
+      }
+    }
+
     const uploaded = await potholeMediaStorage.uploadPhotoPair({ thumbUri, fullUri });
 
-    // Garantia estrita de anonimato LGPD em pothole_updates
+    // Exibe "Usuário Anônimo" ao público preservando user_id interno em pothole_updates
     const updateInsertPayload = {
       pothole_id: potholeId,
-      user_id: anonymousFlag ? null : authorUserId || null,
-      author_nickname: anonymousFlag ? null : cleanNickname,
+      user_id: resolvedUserId,
+      author_nickname: anonymousFlag ? 'Usuário Anônimo' : cleanNickname,
       is_anonymous: anonymousFlag,
       status: nextStatus,
       note: cleanNote,

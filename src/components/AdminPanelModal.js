@@ -26,6 +26,7 @@ import {
   fetchAdminPotholes,
   fetchAdminProfiles,
   fetchAdminUpdates,
+  formatAdminRealAuthorLabel,
 } from '../services/adminService';
 import { formatDateTimePtBr } from '../services/potholeSeedService';
 
@@ -433,6 +434,14 @@ export function AdminPanelModal({
                   <Text style={[styles.itemPreview, { color: colors.textSecondary }]} numberOfLines={2}>
                     {item.street_address} — {item.comment}
                   </Text>
+                  {item.is_anonymous ? (
+                    <View style={styles.adminAuthorBadge}>
+                      <FontAwesome6 name="user-shield" size={11} color="#B3261E" />
+                      <Text style={styles.adminAuthorBadgeText}>
+                        {formatAdminRealAuthorLabel(item.real_author, item.user_id)}
+                      </Text>
+                    </View>
+                  ) : null}
                 </View>
               </View>
 
@@ -517,6 +526,14 @@ export function AdminPanelModal({
                   <Text style={[styles.itemPreview, { color: colors.textSecondary }]} numberOfLines={2}>
                     {item.note || 'Sem observação adicional.'}
                   </Text>
+                  {item.is_anonymous ? (
+                    <View style={styles.adminAuthorBadge}>
+                      <FontAwesome6 name="user-shield" size={11} color="#B3261E" />
+                      <Text style={styles.adminAuthorBadgeText}>
+                        {formatAdminRealAuthorLabel(item.real_author, item.user_id)}
+                      </Text>
+                    </View>
+                  ) : null}
                 </View>
               </View>
 
@@ -786,6 +803,25 @@ const styles = StyleSheet.create({
   profileActionsRow: {
     flexDirection: 'row',
     gap: 8,
+  },
+  adminAuthorBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: '#FCE8E6',
+    borderWidth: 1,
+    borderColor: '#F5C2C0',
+  },
+  adminAuthorBadgeText: {
+    flex: 1,
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '600',
+    color: '#8C1D18',
   },
 });
 

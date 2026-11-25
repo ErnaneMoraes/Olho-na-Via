@@ -27,7 +27,12 @@ import {
   SaveButton,
 } from '../../components/common/Buttons';
 import { useAppSettings } from '../context/AppSettingsContext';
-import { adminDeletePothole, adminDeletePotholeUpdate } from '../services/adminService';
+import {
+  adminDeletePothole,
+  adminDeletePotholeUpdate,
+  fetchAdminUserIdentitiesMap,
+  formatAdminRealAuthorLabel,
+} from '../services/adminService';
 import { reverseGeocodeCoordinate } from '../services/geocodingService';
 import { deletePotholePhotos } from '../services/potholeMediaService';
 import { potholeRepository } from '../services/potholeRepository';
@@ -125,6 +130,7 @@ export function PotholeDetailModal({
   const [savingVerification, setSavingVerification] = useState(false);
   const [verificationError, setVerificationError] = useState('');
   const [adminBusy, setAdminBusy] = useState(false);
+  const [adminIdentities, setAdminIdentities] = useState({});
   const savingRef = useRef(false);
 
   useEffect(() => {
@@ -194,6 +200,28 @@ export function PotholeDetailModal({
       setVerificationError('');
     }
   }, [pendingVerificationDraft, initialAnonymous]);
+
+  useEffect(() => {
+    if (!visible || !session?.isAdmin || session?.isDemo || !pothole) {
+      setAdminIdentities({});
+      return;
+    }
+
+    let active = true;
+    fetchAdminUserIdentitiesMap()
+      .then((map) => {
+        if (active && map) {
+          setAdminIdentities(map);
+        }
+      })
+      .catch(() => {
+        if (active) setAdminIdentities({});
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [visible, session?.isAdmin, session?.isDemo, pothole]);
 
   const animateDismiss = useCallback(() => {
     if (savingRef.current || isClosingRef.current) return;
@@ -608,6 +636,18 @@ export function PotholeDetailModal({
                   </Text>
                 </View>
 
+                {session?.isAdmin && !session?.isDemo && pothole.isAnonymous ? (
+                  <View style={styles.adminAuthorBadge}>
+                    <FontAwesome6 name="user-shield" size={12} color="#B3261E" />
+                    <Text style={styles.adminAuthorBadgeText}>
+                      {formatAdminRealAuthorLabel(
+                        adminIdentities[pothole.authorUserId],
+                        pothole.authorUserId
+                      )}
+                    </Text>
+                  </View>
+                ) : null}
+
                 <View style={styles.addressRow}>
                   <FontAwesome6 name="location-dot" size={14} color={colors.primary} />
                   {loadingAddress ? (
@@ -937,6 +977,17 @@ export function PotholeDetailModal({
                                   {entry.isAnonymous ? 'Usuário Anônimo' : entry.authorNickname}
                                 </Text>
                               </View>
+                              {session?.isAdmin && !session?.isDemo && entry.isAnonymous ? (
+                                <View style={styles.adminAuthorBadge}>
+                                  <FontAwesome6 name="user-shield" size={11} color="#B3261E" />
+                                  <Text style={styles.adminAuthorBadgeText}>
+                                    {formatAdminRealAuthorLabel(
+                                      adminIdentities[entry.authorUserId],
+                                      entry.authorUserId
+                                    )}
+                                  </Text>
+                                </View>
+                              ) : null}
                               {entry.note ? (
                                 <Text style={[styles.timelineNote, { color: colors.textSecondary }]}>
                                   {entry.note}
@@ -1207,6 +1258,25 @@ const styles = StyleSheet.create({
   authorName: {
     fontSize: 13,
     fontWeight: '700',
+  },
+  adminAuthorBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: '#FCE8E6',
+    borderWidth: 1,
+    borderColor: '#F5C2C0',
+  },
+  adminAuthorBadgeText: {
+    flex: 1,
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '600',
+    color: '#8C1D18',
   },
   dateText: {
     fontSize: 12,

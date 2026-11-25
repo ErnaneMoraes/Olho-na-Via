@@ -100,6 +100,8 @@ export function AppSettingsProvider({ children }) {
       },
       defaultAnonymous,
       setDefaultAnonymous,
+      postAnonymously: defaultAnonymous,
+      setPostAnonymously: setDefaultAnonymous,
       cameraShutterSound,
       setCameraShutterSound,
       dataVersion,

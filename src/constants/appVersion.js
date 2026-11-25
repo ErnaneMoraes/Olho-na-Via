@@ -1,8 +1,19 @@
 export const APP_NAME = 'Olho na Via';
-export const APP_VERSION = '1.5.2';
-export const APP_BUILD_TAG = '2026.11.25-web-icons-camera-fix';
+export const APP_VERSION = '1.5.3';
+export const APP_BUILD_TAG = '2026.11.25-admin-author-audit-clean-settings';
 
 export const APP_CHANGELOG = [
+  {
+    version: '1.5.3',
+    date: '25/11/2026',
+    title: 'Identificação de Autores para Admin, Ajustes Limpos e Card Opaco',
+    highlights: [
+      'Preservado user_id interno em relatos e comentários anônimos para moderação administrativa via RPC admin_get_user_identities.',
+      'Badges exclusivos de administrador revelando apelido e e-mail real de postagens anônimas no Painel Admin e nos detalhes da via.',
+      'Diagnóstico e histórico de versões restritos a administradores; seção Sobre simplificada com botão Ver Tutorial Inicial para todos.',
+      'Corrigida a elevação do cartão Área Restrita — Moderação Administrativa com fundo sólido Material You sem artefato cinza.',
+    ],
+  },
   {
     version: '1.5.2',
     date: '25/11/2026',

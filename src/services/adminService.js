@@ -246,32 +246,105 @@ export async function adminDeleteFullAccount(targetUserId) {
   return true;
 }
 
+export function formatAdminRealAuthorLabel(identity, fallbackUserId = null) {
+  if (identity?.nickname && identity?.email) {
+    return `Postado como Anônimo • Autor real: ${identity.nickname} (${identity.email})`;
+  }
+  if (identity?.nickname) {
+    return `Postado como Anônimo • Autor real: ${identity.nickname}`;
+  }
+  if (fallbackUserId) {
+    const uidStr = String(fallbackUserId);
+    const shortUid = uidStr.length > 12 ? `${uidStr.slice(0, 8)}…` : uidStr;
+    return `Postado como Anônimo • Autor real: UID ${shortUid}`;
+  }
+  return 'Postado como Anônimo • Autor real indisponível (registro antigo)';
+}
+
+/**
+ * Resolve identidades reais (apelido + e-mail) para moderação administrativa via RPC SECURITY DEFINER,
+ * com fallback seguro para `public.profiles` caso a RPC ainda não tenha sido aplicada.
+ */
+export async function fetchAdminUserIdentitiesMap() {
+  await requireAdminSession();
+  const map = {};
+
+  try {
+    const { data, error } = await supabase.rpc('admin_get_user_identities');
+    if (!error && Array.isArray(data)) {
+      for (const row of data) {
+        if (!row?.user_id) continue;
+        map[row.user_id] = {
+          userId: row.user_id,
+          email: row.email || null,
+          nickname: row.nickname || 'Cidadão',
+        };
+      }
+      return map;
+    }
+  } catch {
+    // Fallback para tabela profiles abaixo
+  }
+
+  try {
+    const { data: profiles } = await supabase.from('profiles').select('id, nickname');
+    if (Array.isArray(profiles)) {
+      for (const p of profiles) {
+        if (!p?.id) continue;
+        map[p.id] = {
+          userId: p.id,
+          email: null,
+          nickname: p.nickname || 'Cidadão',
+        };
+      }
+    }
+  } catch {
+    // Mantém mapa vazio sem interromper a listagem administrativa
+  }
+
+  return map;
+}
+
 export async function fetchAdminPotholes(limit = 50) {
   await requireAdminSession();
-  const { data, error } = await supabase
-    .from('potholes')
-    .select(
-      'id, user_id, author_nickname, is_anonymous, street_address, comment, status, thumb_url, full_url, confirmations, created_at'
-    )
-    .order('created_at', { ascending: false })
-    .limit(limit);
+  const [{ data, error }, identitiesMap] = await Promise.all([
+    supabase
+      .from('potholes')
+      .select(
+        'id, user_id, author_nickname, is_anonymous, street_address, comment, status, thumb_url, full_url, confirmations, created_at'
+      )
+      .order('created_at', { ascending: false })
+      .limit(limit),
+    fetchAdminUserIdentitiesMap(),
+  ]);
 
   if (error) throw createAdminError(`Erro ao carregar registros: ${error.message}`);
-  return Array.isArray(data) ? data : [];
+  const rows = Array.isArray(data) ? data : [];
+  return rows.map((row) => ({
+    ...row,
+    real_author: row.user_id ? identitiesMap[row.user_id] || null : null,
+  }));
 }
 
 export async function fetchAdminUpdates(limit = 50) {
   await requireAdminSession();
-  const { data, error } = await supabase
-    .from('pothole_updates')
-    .select(
-      'id, pothole_id, user_id, author_nickname, is_anonymous, status, note, thumb_url, full_url, created_at'
-    )
-    .order('created_at', { ascending: false })
-    .limit(limit);
+  const [{ data, error }, identitiesMap] = await Promise.all([
+    supabase
+      .from('pothole_updates')
+      .select(
+        'id, pothole_id, user_id, author_nickname, is_anonymous, status, note, thumb_url, full_url, created_at'
+      )
+      .order('created_at', { ascending: false })
+      .limit(limit),
+    fetchAdminUserIdentitiesMap(),
+  ]);
 
   if (error) throw createAdminError(`Erro ao carregar comentários: ${error.message}`);
-  return Array.isArray(data) ? data : [];
+  const rows = Array.isArray(data) ? data : [];
+  return rows.map((row) => ({
+    ...row,
+    real_author: row.user_id ? identitiesMap[row.user_id] || null : null,
+  }));
 }
 
 export async function fetchAdminProfiles(limit = 50) {
