@@ -114,6 +114,93 @@ export async function fetchPendingRepairReviews(userId) {
 }
 
 /**
+ * Busca todas as revisões de correção pendentes (review_decision IS NULL) para um relato,
+ * anexando foto (thumb_url / full_url), comentário e autor da atualização correspondente.
+ */
+export async function fetchPendingReviewsForPothole(potholeId) {
+  if (!isSupabaseConfigured() || !potholeId) {
+    return [];
+  }
+
+  try {
+    const { data: notifRows, error } = await supabase
+      .from('user_notifications')
+      .select(
+        'id, recipient_user_id, actor_user_id, pothole_id, pothole_update_id, type, title, body, is_read, review_decision, created_at'
+      )
+      .eq('pothole_id', potholeId)
+      .eq('type', 'repair_review_requested')
+      .is('review_decision', null)
+      .order('created_at', { ascending: true });
+
+    if (error || !Array.isArray(notifRows) || notifRows.length === 0) {
+      return [];
+    }
+
+    const updateIds = notifRows.map((n) => n.pothole_update_id).filter(Boolean);
+    const updatesById = {};
+
+    if (updateIds.length > 0) {
+      const { data: updateRows } = await supabase
+        .from('pothole_updates')
+        .select(
+          'id, pothole_id, user_id, author_nickname, is_anonymous, status, note, thumb_url, full_url, created_at'
+        )
+        .in('id', updateIds);
+
+      if (Array.isArray(updateRows)) {
+        for (const u of updateRows) {
+          updatesById[u.id] = u;
+        }
+      }
+    }
+
+    return notifRows.map((notif) => {
+      const upd = notif.pothole_update_id ? updatesById[notif.pothole_update_id] : null;
+      const isAnon = Boolean(upd?.is_anonymous);
+      return {
+        ...notif,
+        createdAtFormatted: formatDateTimePtBr(notif.created_at),
+        thumb_url: upd?.thumb_url || null,
+        full_url: upd?.full_url || null,
+        note: upd?.note || '',
+        comment: upd?.note || '',
+        is_anonymous: isAnon,
+        author_nickname: isAnon
+          ? 'Usuário Anônimo'
+          : upd?.author_nickname || 'Cidadão colaborador',
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Verifica se o usuário autenticado já possui uma revisão pendente para o relato informado.
+ */
+export async function hasUserPendingReviewForPothole(userId, potholeId) {
+  if (!isSupabaseConfigured() || !userId || !potholeId) {
+    return false;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('user_notifications')
+      .select('id')
+      .eq('pothole_id', potholeId)
+      .eq('actor_user_id', userId)
+      .eq('type', 'repair_review_requested')
+      .is('review_decision', null)
+      .limit(1);
+
+    return !error && Array.isArray(data) && data.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Busca revisão de correção pendente (review_decision IS NULL) para um relato específico.
  */
 export async function fetchPendingRepairReviewForPothole(userId, potholeId) {
@@ -173,12 +260,16 @@ export async function markNotificationRead(notificationId) {
 export async function submitRepairAuthorReview({
   pothole = null,
   potholeId = null,
+  selectedNotificationId = null,
   notificationId = null,
+  approvedReview = null,
   approved,
   reviewerNote = '',
   authorNickname = 'Autor do relato',
 }) {
   const targetPotholeId = pothole?.id || potholeId || null;
+  const targetNotificationId = selectedNotificationId || notificationId || null;
+
   if (!isSupabaseConfigured() || !targetPotholeId) {
     throw new Error('Sincronização com a nuvem indisponível para avaliar a correção.');
   }
@@ -194,10 +285,16 @@ export async function submitRepairAuthorReview({
   }
 
   const nextStatus = approved ? 'fixed' : 'open';
+  const approvedCitizen =
+    approvedReview?.is_anonymous
+      ? 'Usuário Anônimo'
+      : approvedReview?.author_nickname || '';
   const cleanNote =
     String(reviewerNote || '').trim() ||
     (approved
-      ? 'Autor original aprovou a correção informada.'
+      ? approvedCitizen
+        ? `Autor original aprovou a correção informada por ${approvedCitizen}.`
+        : 'Autor original aprovou a correção informada.'
       : 'Autor original informou que o problema ainda persiste (reaberto).');
   const cleanNickname = String(authorNickname || 'Autor do relato').trim();
 
@@ -224,9 +321,15 @@ export async function submitRepairAuthorReview({
     );
   }
 
+  const potholePatch = { status: nextStatus };
+  if (approved && approvedReview?.thumb_url && approvedReview?.full_url) {
+    potholePatch.thumb_url = approvedReview.thumb_url;
+    potholePatch.full_url = approvedReview.full_url;
+  }
+
   const { error: patchError } = await supabase
     .from('potholes')
-    .update({ status: nextStatus })
+    .update(potholePatch)
     .eq('id', targetPotholeId);
 
   if (patchError) {
@@ -237,25 +340,28 @@ export async function submitRepairAuthorReview({
 
   try {
     const decision = approved ? 'approved' : 'rejected';
-    await supabase
-      .from('user_notifications')
-      .update({
-        is_read: true,
-        review_decision: decision,
-      })
-      .eq('recipient_user_id', activeUserId)
-      .eq('pothole_id', targetPotholeId)
-      .eq('type', 'repair_review_requested')
-      .is('review_decision', null);
 
-    if (notificationId) {
+    if (approved || !targetNotificationId) {
       await supabase
         .from('user_notifications')
         .update({
           is_read: true,
           review_decision: decision,
         })
-        .eq('id', notificationId)
+        .eq('recipient_user_id', activeUserId)
+        .eq('pothole_id', targetPotholeId)
+        .eq('type', 'repair_review_requested')
+        .is('review_decision', null);
+    }
+
+    if (targetNotificationId) {
+      await supabase
+        .from('user_notifications')
+        .update({
+          is_read: true,
+          review_decision: decision,
+        })
+        .eq('id', targetNotificationId)
         .eq('recipient_user_id', activeUserId);
     }
   } catch (err) {
@@ -264,6 +370,7 @@ export async function submitRepairAuthorReview({
 
   await recordDiagnosticEvent('AVALIACAO_AUTOR', 'Autor avaliou correção informada', {
     potholeId: targetPotholeId,
+    selectedNotificationId: targetNotificationId,
     approved: Boolean(approved),
     nextStatus,
   });

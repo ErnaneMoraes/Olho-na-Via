@@ -28,7 +28,7 @@ import { deleteTempPhoto } from '../services/potholeMediaService';
 import { canCapturePotholePhotos } from '../utils/devicePlatform';
 import { PhotoReviewModal } from './PhotoReviewModal';
 
-const SHUTTER_GPS_TIMEOUT_MS = 8000;
+const SHUTTER_GPS_TIMEOUT_MS = 4500;
 
 function normalizeFallbackCoords(fallbackCoords) {
   if (
@@ -129,8 +129,16 @@ export function PotholeCameraModal({
   previewTitle = 'Revisar Foto do Buraco',
 }) {
   const insets = useSafeAreaInsets();
-  const { colors, radiusCard, radiusButton, radiusInput, borderWidth, cardShadow, settings } =
-    useAppSettings();
+  const {
+    colors,
+    isDark,
+    radiusCard,
+    radiusButton,
+    radiusInput,
+    borderWidth,
+    cardShadow,
+    settings,
+  } = useAppSettings();
 
   const cameraRef = useRef(null);
   const [permission, requestPermission] = useCameraPermissions();
@@ -138,7 +146,7 @@ export function PotholeCameraModal({
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [noticeAccepted, setNoticeAccepted] = useState(false);
   const [flashEnabled, setFlashEnabled] = useState(false);
-  const [isCapturing, setIsCapturing] = useState(false);
+  const [isCapturingPhoto, setIsCapturingPhoto] = useState(false);
   const [checkingSafety, setCheckingSafety] = useState(false);
   const [capturedPhoto, setCapturedPhoto] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
@@ -154,7 +162,7 @@ export function PotholeCameraModal({
       setIsCameraReady(false);
       setNoticeAccepted(false);
       setFlashEnabled(false);
-      setIsCapturing(false);
+      setIsCapturingPhoto(false);
       setCheckingSafety(false);
       setErrorMsg('');
       return;
@@ -166,7 +174,7 @@ export function PotholeCameraModal({
   }, [visible, isDesktopBlocked, permission, requestPermission]);
 
   const handleCancel = async () => {
-    if (isCapturing || checkingSafety) return;
+    if (isCapturingPhoto || checkingSafety) return;
     if (capturedPhoto?.uri) {
       await deleteTempPhoto(capturedPhoto.uri);
     }
@@ -179,9 +187,9 @@ export function PotholeCameraModal({
   };
 
   const handleCapture = async () => {
-    if (isDesktopBlocked || !cameraRef.current || isCapturing || checkingSafety) return;
+    if (isDesktopBlocked || !cameraRef.current || isCapturingPhoto || checkingSafety) return;
     setErrorMsg('');
-    setIsCapturing(true);
+    setIsCapturingPhoto(true);
     try {
       const [photo, freshCoords] = await Promise.all([
         cameraRef.current.takePictureAsync({
@@ -217,7 +225,7 @@ export function PotholeCameraModal({
       setErrorMsg('Erro ao acionar a câmera. Tente novamente.');
     } finally {
       setCheckingSafety(false);
-      setIsCapturing(false);
+      setIsCapturingPhoto(false);
     }
   };
 
@@ -453,6 +461,7 @@ export function PotholeCameraModal({
           <View style={styles.topOverlayBar}>
             <Pressable
               onPress={handleCancel}
+              disabled={isCapturingPhoto || checkingSafety}
               accessibilityLabel="Fechar câmera"
               style={[
                 styles.hudIconBtn,
@@ -461,6 +470,7 @@ export function PotholeCameraModal({
                   borderColor: colors.border,
                   borderWidth,
                   borderRadius: radiusButton,
+                  opacity: isCapturingPhoto || checkingSafety ? 0.5 : 1,
                 },
               ]}
             >
@@ -487,6 +497,7 @@ export function PotholeCameraModal({
             {!isWeb && facing === 'back' ? (
               <Pressable
                 onPress={() => setFlashEnabled((v) => !v)}
+                disabled={isCapturingPhoto || checkingSafety}
                 accessibilityLabel="Alternar flash"
                 style={[
                   styles.flashBtn,
@@ -495,6 +506,7 @@ export function PotholeCameraModal({
                     borderColor: flashEnabled ? colors.warning : colors.border,
                     borderWidth,
                     borderRadius: radiusButton,
+                    opacity: isCapturingPhoto || checkingSafety ? 0.5 : 1,
                   },
                 ]}
               >
@@ -561,19 +573,19 @@ export function PotholeCameraModal({
           <View style={styles.captureButtonsRow}>
             <Pressable
               onPress={handleCapture}
-              disabled={isCapturing || checkingSafety}
+              disabled={isCapturingPhoto || checkingSafety}
               accessibilityLabel="Capturar foto do buraco"
               style={({ pressed }) => [
                 styles.shutterOuter,
                 {
                   borderColor: colors.card,
                   backgroundColor: colors.overlay,
-                  opacity: pressed ? 0.85 : 1,
+                  opacity: isCapturingPhoto || checkingSafety ? 0.55 : pressed ? 0.85 : 1,
                 },
               ]}
             >
               <View style={[styles.shutterInner, { backgroundColor: colors.primary }]}>
-                {isCapturing || checkingSafety ? (
+                {isCapturingPhoto || checkingSafety ? (
                   <ActivityIndicator size="small" color={colors.primaryText} />
                 ) : (
                   <FontAwesome6 name="camera" size={24} color={colors.primaryText} />
@@ -583,6 +595,25 @@ export function PotholeCameraModal({
           </View>
         </View>
       </View>
+
+      {isCapturingPhoto || checkingSafety ? (
+        <View style={styles.capturingOverlay}>
+          <View
+            style={[
+              styles.capturingCard,
+              cardShadow,
+              {
+                backgroundColor: isDark ? 'rgba(30, 34, 40, 0.94)' : 'rgba(15, 23, 42, 0.88)',
+                borderColor: 'rgba(255, 255, 255, 0.16)',
+                borderRadius: radiusCard,
+              },
+            ]}
+          >
+            <ActivityIndicator size="large" color="#FFFFFF" />
+            <Text style={styles.capturingText}>Carregando, aguarde um momento...</Text>
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 
@@ -770,6 +801,29 @@ const styles = StyleSheet.create({
     borderRadius: 31,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  capturingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    zIndex: 40,
+  },
+  capturingCard: {
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
+    minWidth: 230,
+  },
+  capturingText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   previewBottomWrap: {
     gap: 10,

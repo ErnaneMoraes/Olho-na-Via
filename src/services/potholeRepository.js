@@ -1,7 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { canCapturePotholePhotos } from '../utils/devicePlatform';
 import { recordDiagnosticEvent } from './diagnosticLogService';
-import { notifyRepairSubmitted } from './notificationService';
+import {
+  hasUserPendingReviewForPothole,
+  notifyRepairSubmitted,
+} from './notificationService';
 import {
   cacheRemoteThumbnail,
   deletePotholePhotos,
@@ -550,6 +553,27 @@ export const SupabasePotholeAdapter = {
     const cleanNote = String(note || '').trim();
     const cleanNickname = String(authorNickname || 'Cidadão').trim();
 
+    const { data: dbPothole } = await supabase
+      .from('potholes')
+      .select('id, user_id, status, street_address')
+      .eq('id', potholeId)
+      .maybeSingle();
+
+    const ownerUserId = dbPothole?.user_id || currentPothole?.authorUserId || null;
+    const isOtherUserSuggestingFix =
+      nextStatus === 'fixed' &&
+      Boolean(ownerUserId) &&
+      ownerUserId !== activeUserId;
+
+    if (isOtherUserSuggestingFix) {
+      const alreadyPending = await hasUserPendingReviewForPothole(activeUserId, potholeId);
+      if (alreadyPending) {
+        throw createRepositoryError(
+          'Você já enviou uma revisão de correção para este local. Aguarde a avaliação do autor original.'
+        );
+      }
+    }
+
     const uploaded = await potholeMediaStorage.uploadPhotoPair({
       thumbUri,
       fullUri,
@@ -585,28 +609,24 @@ export const SupabasePotholeAdapter = {
       );
     }
 
-    const { data: dbPothole } = await supabase
-      .from('potholes')
-      .select('id, user_id, status, street_address')
-      .eq('id', potholeId)
-      .maybeSingle();
-
-    const ownerUserId = dbPothole?.user_id || currentPothole?.authorUserId || null;
-    const isOtherUserSuggestingFix =
-      nextStatus === 'fixed' &&
-      Boolean(ownerUserId) &&
-      ownerUserId !== activeUserId;
     const persistedPotholeStatus = isOtherUserSuggestingFix ? 'open' : nextStatus;
 
     const nextConfirmations = (currentPothole?.confirmations || 1) + 1;
+    const potholeUpdateFields = isOtherUserSuggestingFix
+      ? {
+          status: 'open',
+          confirmations: nextConfirmations,
+        }
+      : {
+          status: persistedPotholeStatus,
+          thumb_url: uploaded.thumbUri,
+          full_url: uploaded.fullUri,
+          confirmations: nextConfirmations,
+        };
+
     const { data: updatedRow, error: patchError } = await supabase
       .from('potholes')
-      .update({
-        status: persistedPotholeStatus,
-        thumb_url: uploaded.thumbUri,
-        full_url: uploaded.fullUri,
-        confirmations: nextConfirmations,
-      })
+      .update(potholeUpdateFields)
       .eq('id', potholeId)
       .select(
         'id, user_id, author_nickname, is_anonymous, latitude, longitude, street_address, comment, status, thumb_url, full_url, confirmations, created_at'

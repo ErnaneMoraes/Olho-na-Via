@@ -1,8 +1,19 @@
 export const APP_NAME = 'Olho na Via';
-export const APP_VERSION = '1.6.9';
-export const APP_BUILD_TAG = '2026.11.25-repair-approval-gate';
+export const APP_VERSION = '1.7.0';
+export const APP_BUILD_TAG = '2026.11.25-shutter-loader-multi-review';
 
 export const APP_CHANGELOG = [
+  {
+    version: '1.7.0',
+    date: '25/11/2026',
+    title: 'Carregamento Instantâneo na Câmera, Fila Multi-Revisão e Pílula Pendente',
+    highlights: [
+      'Adicionado overlay visual imediato ("Carregando, aguarde um momento...") ao pressionar o obturador da câmera enquanto captura foto e trava o GPS (timeout de 4,5s).',
+      'Implementada fila multi-revisão de reparos com pílula âmbar ("1 revisão pendente" / "N revisões pendentes") visível no modal de detalhes.',
+      'Impedida duplicidade de revisão pendente pelo mesmo cidadão (índice parcial único no banco e cartão "Revisão já enviada"), mantendo outros moradores livres para colaborar.',
+      'O autor original agora visualiza todas as comprovações pendentes com foto ampliável, comentário e botões individuais para aprovar a escolhida ou rejeitar.',
+    ],
+  },
   {
     version: '1.6.9',
     date: '25/11/2026',

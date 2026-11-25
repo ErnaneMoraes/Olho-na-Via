@@ -355,13 +355,22 @@ create table if not exists public.user_notifications (
 create index if not exists idx_user_notifications_recipient_unread
   on public.user_notifications (recipient_user_id, is_read, created_at desc);
 
+create unique index if not exists idx_unique_pending_review_per_actor
+  on public.user_notifications (pothole_id, actor_user_id)
+  where type = 'repair_review_requested'
+    and review_decision is null
+    and actor_user_id is not null;
+
 alter table public.user_notifications enable row level security;
 
 drop policy if exists "Recipients can view own notifications" on public.user_notifications;
 create policy "Recipients can view own notifications"
   on public.user_notifications for select
-  to authenticated
-  using (auth.uid() = recipient_user_id);
+  using (
+    auth.uid() = recipient_user_id
+    or auth.uid() = actor_user_id
+    or (type = 'repair_review_requested' and review_decision is null)
+  );
 
 drop policy if exists "Recipients can update own notifications" on public.user_notifications;
 create policy "Recipients can update own notifications"

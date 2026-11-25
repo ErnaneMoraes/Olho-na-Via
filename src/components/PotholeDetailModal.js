@@ -36,6 +36,7 @@ import {
 import { reverseGeocodeCoordinate } from '../services/geocodingService';
 import {
   fetchPendingRepairReviewForPothole,
+  fetchPendingReviewsForPothole,
   submitRepairAuthorReview,
 } from '../services/notificationService';
 import { deletePotholePhotos } from '../services/potholeMediaService';
@@ -104,6 +105,7 @@ export function PotholeDetailModal({
   const insets = useSafeAreaInsets();
   const {
     colors,
+    isDark,
     radiusCard,
     radiusButton,
     radiusInput,
@@ -139,9 +141,11 @@ export function PotholeDetailModal({
   const [savingVerification, setSavingVerification] = useState(false);
   const [verificationError, setVerificationError] = useState('');
   const [submittingAuthorReview, setSubmittingAuthorReview] = useState(false);
+  const [submittingReviewId, setSubmittingReviewId] = useState(null);
   const [authorReviewFeedback, setAuthorReviewFeedback] = useState('');
   const [authorReviewError, setAuthorReviewError] = useState('');
   const [activePendingReview, setActivePendingReview] = useState(pendingReviewNotification);
+  const [pendingReviews, setPendingReviews] = useState([]);
   const [adminBusy, setAdminBusy] = useState(false);
   const [adminIdentities, setAdminIdentities] = useState({});
   const [anonToastMsg, setAnonToastMsg] = useState('');
@@ -176,6 +180,35 @@ export function PotholeDetailModal({
     setAuthorReviewFeedback('');
     setAuthorReviewError('');
   }, [pothole?.id, visible]);
+
+  const loadPendingReviews = useCallback(async () => {
+    if (!visible || !pothole?.id || !pothole?.isCloudReport) {
+      setPendingReviews([]);
+      return;
+    }
+
+    try {
+      const list = await fetchPendingReviewsForPothole(pothole.id);
+      setPendingReviews(Array.isArray(list) ? list : []);
+    } catch {
+      setPendingReviews([]);
+    }
+  }, [visible, pothole?.id, pothole?.isCloudReport]);
+
+  useEffect(() => {
+    if (!visible || !pothole?.id || !pothole?.isCloudReport) {
+      setPendingReviews([]);
+      return;
+    }
+    loadPendingReviews();
+  }, [
+    visible,
+    pothole?.id,
+    pothole?.isCloudReport,
+    pothole?.status,
+    pothole?.verifications?.length,
+    loadPendingReviews,
+  ]);
 
   useEffect(() => {
     setActivePendingReview(pendingReviewNotification || null);
@@ -455,6 +488,7 @@ export function PotholeDetailModal({
       });
       notifyDataRestored();
       onVerificationSaved(updated);
+      await loadPendingReviews();
     } catch (err) {
       setVerificationError(err?.message || 'Não foi possível salvar a verificação.');
     } finally {
@@ -508,21 +542,32 @@ export function PotholeDetailModal({
     );
   };
 
-  const handleRepairAuthorReview = async (approved) => {
+  const handleRepairAuthorReview = async (approved, targetReview = null) => {
     if (!pothole || submittingAuthorReview || savingVerification) return;
+    const selectedId = targetReview?.id || activePendingReview?.id || null;
     setAuthorReviewError('');
     setAuthorReviewFeedback('');
     setSubmittingAuthorReview(true);
+    setSubmittingReviewId(selectedId || (approved ? 'approve' : 'reject'));
     try {
       const reviewRes = await submitRepairAuthorReview({
         pothole,
         potholeId: pothole.id,
-        notificationId: activePendingReview?.id || null,
+        selectedNotificationId: selectedId,
+        approvedReview: targetReview,
         approved,
         authorNickname: session?.nickname || 'Autor do relato',
       });
 
-      setActivePendingReview(null);
+      if (approved) {
+        setActivePendingReview(null);
+        setPendingReviews([]);
+      } else {
+        setPendingReviews((prev) => prev.filter((r) => r.id !== selectedId));
+        if (activePendingReview?.id === selectedId) {
+          setActivePendingReview(null);
+        }
+      }
 
       let refreshed = await potholeRepository.getReportById(pothole.id);
       if (!refreshed) {
@@ -551,10 +596,11 @@ export function PotholeDetailModal({
       notifyDataRestored();
       onVerificationSaved?.(refreshed);
       onAuthorReviewCompleted?.();
+      await loadPendingReviews();
 
       const successText = approved
-        ? 'Correção aprovada! O relato segue confirmado como tampado.'
-        : 'Relato reaberto no mapa! A comunidade foi informada que o buraco continua aberto.';
+        ? 'Correção aprovada! O relato agora está confirmado como tampado.'
+        : 'Revisão rejeitada! O relato segue aberto no mapa para outros motoristas.';
       setAuthorReviewFeedback(successText);
     } catch (err) {
       setAuthorReviewError(
@@ -562,6 +608,7 @@ export function PotholeDetailModal({
       );
     } finally {
       setSubmittingAuthorReview(false);
+      setSubmittingReviewId(null);
     }
   };
 
@@ -570,16 +617,35 @@ export function PotholeDetailModal({
   }
 
   const canModerateCloud = Boolean(session?.isAdmin && pothole?.isCloudReport);
-  const hasPendingAuthorReview = Boolean(
+  const isFixed = pothole.status === 'fixed';
+  const isPotholeOpen = !isFixed;
+  const effectivePendingReviews =
+    pendingReviews.length > 0
+      ? pendingReviews
+      : activePendingReview && isPotholeOpen
+        ? [activePendingReview]
+        : [];
+  const hasPendingReviews = isPotholeOpen && effectivePendingReviews.length > 0;
+  const isAuthorWithPendingReviews = Boolean(
     session &&
       !session.isDemo &&
       pothole?.isCloudReport &&
       pothole?.authorUserId &&
       pothole.authorUserId === session.userId &&
-      activePendingReview
+      hasPendingReviews
   );
+  const userAlreadySubmittedPendingReview = Boolean(
+    session &&
+      !session.isDemo &&
+      !isAuthorWithPendingReviews &&
+      hasPendingReviews &&
+      effectivePendingReviews.some((r) => r.actor_user_id === session.userId)
+  );
+  const pendingPillLabel =
+    effectivePendingReviews.length === 1
+      ? '1 revisão pendente'
+      : `${effectivePendingReviews.length} revisões pendentes`;
 
-  const isFixed = pothole.status === 'fixed';
   const statusColor = isFixed ? colors.success : colors.danger;
   const statusSoft = isFixed ? colors.successSoft : colors.dangerSoft;
   const statusBadgeText = isFixed ? 'Já foi Tampado' : 'Buraco Aberto';
@@ -646,18 +712,47 @@ export function PotholeDetailModal({
 
               <View style={[SharedStyles.contentContainer, styles.header]}>
                 <View style={styles.statusHeaderStack}>
-                  <View style={[styles.statusBadge, { backgroundColor: statusSoft }]}>
-                    <FontAwesome6
-                      name={isFixed ? 'circle-check' : 'triangle-exclamation'}
-                      size={13}
-                      color={statusColor}
-                    />
-                    <Text style={[styles.statusBadgeText, { color: statusColor }]}>
-                      {statusBadgeText}
-                    </Text>
+                  <View style={styles.statusPillsRow}>
+                    <View style={[styles.statusBadge, { backgroundColor: statusSoft }]}>
+                      <FontAwesome6
+                        name={isFixed ? 'circle-check' : 'triangle-exclamation'}
+                        size={13}
+                        color={statusColor}
+                      />
+                      <Text style={[styles.statusBadgeText, { color: statusColor }]}>
+                        {statusBadgeText}
+                      </Text>
+                    </View>
+
+                    {hasPendingReviews ? (
+                      <View
+                        style={[
+                          styles.amberPendingPill,
+                          {
+                            backgroundColor: isDark ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7',
+                            borderColor: '#F59E0B',
+                          },
+                        ]}
+                      >
+                        <FontAwesome6
+                          name="clock"
+                          size={11}
+                          color={isDark ? '#FDE68A' : '#92400E'}
+                        />
+                        <Text
+                          numberOfLines={1}
+                          style={[
+                            styles.amberPendingPillText,
+                            { color: isDark ? '#FDE68A' : '#92400E' },
+                          ]}
+                        >
+                          {pendingPillLabel}
+                        </Text>
+                      </View>
+                    ) : null}
                   </View>
 
-                  {hasPendingAuthorReview ? (
+                  {isAuthorWithPendingReviews ? (
                     <View
                       style={[
                         styles.pendingReviewSubBadge,
@@ -919,7 +1014,7 @@ export function PotholeDetailModal({
                     </View>
                   </View>
                 </View>
-              ) : hasPendingAuthorReview ? (
+              ) : isAuthorWithPendingReviews ? (
                 <View
                   style={[
                     styles.sectionCard,
@@ -935,42 +1030,171 @@ export function PotholeDetailModal({
                   <View style={styles.timelineHeaderRow}>
                     <FontAwesome6 name="bell" size={15} color={colors.primary} />
                     <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                      Avaliar Correção Informada
+                      Avaliar Correções Informadas ({effectivePendingReviews.length})
                     </Text>
                   </View>
                   <Text style={[styles.helperText, { color: colors.textSecondary }]}>
-                    Alguém informou que este buraco foi tampado. Você, como autor do relato, pode
-                    confirmar a correção ou reabrir o relato caso o problema continue.
+                    Cidadãos informaram que este local foi tampado. Analise cada envio abaixo e
+                    escolha qual comprovação aprovar ou rejeitar:
                   </Text>
                   {authorReviewError ? (
                     <Text style={[styles.errorText, { color: colors.danger }]}>
                       {authorReviewError}
                     </Text>
                   ) : null}
-                  <View style={styles.actionRow}>
-                    <SaveButton
-                      compact
-                      label="Aprovar Correção"
-                      icon="circle-check"
-                      loading={submittingAuthorReview}
-                      disabled={submittingAuthorReview || savingVerification}
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                      onPress={() => handleRepairAuthorReview(true)}
-                      style={styles.flexOne}
-                    />
-                    <DangerButton
-                      compact
-                      label="Não foi tampado (Reabrir)"
-                      icon="rotate-left"
-                      loading={submittingAuthorReview}
-                      disabled={submittingAuthorReview || savingVerification}
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                      onPress={() => handleRepairAuthorReview(false)}
-                      style={styles.flexOne}
-                    />
+
+                  <View style={styles.pendingReviewsList}>
+                    {effectivePendingReviews.map((reviewItem, rIdx) => {
+                      const reviewThumb = reviewItem.thumb_url || reviewItem.full_url;
+                      const isThisBusy =
+                        submittingAuthorReview && submittingReviewId === reviewItem.id;
+                      const authorLabel = reviewItem.is_anonymous
+                        ? 'Usuário Anônimo'
+                        : reviewItem.author_nickname || 'Cidadão colaborador';
+                      const reviewNoteText = reviewItem.note || reviewItem.comment || '';
+
+                      return (
+                        <View
+                          key={reviewItem.id || `pending-${rIdx}`}
+                          style={[
+                            styles.pendingReviewItemCard,
+                            {
+                              backgroundColor: colors.card,
+                              borderColor: colors.border,
+                              borderWidth: 1,
+                              borderRadius: radiusInput,
+                            },
+                          ]}
+                        >
+                          <View style={styles.pendingReviewItemRow}>
+                            {reviewThumb ? (
+                              <Pressable
+                                onPress={() =>
+                                  openZoomViewer(reviewItem.full_url || reviewItem.thumb_url)
+                                }
+                                style={[
+                                  styles.pendingReviewThumbWrap,
+                                  { borderColor: colors.border, borderRadius: radiusInput },
+                                ]}
+                              >
+                                <Image
+                                  source={{ uri: reviewThumb }}
+                                  style={styles.timelineThumbImg}
+                                  resizeMode="cover"
+                                />
+                              </Pressable>
+                            ) : (
+                              <View
+                                style={[
+                                  styles.timelineIconBadge,
+                                  {
+                                    backgroundColor: colors.warningSoft,
+                                    borderColor: colors.warning,
+                                    borderRadius: radiusInput,
+                                  },
+                                ]}
+                              >
+                                <FontAwesome6 name="camera" size={16} color={colors.warning} />
+                              </View>
+                            )}
+
+                            <View style={styles.flexOne}>
+                              <View style={styles.timelineAuthorRow}>
+                                <FontAwesome6
+                                  name={reviewItem.is_anonymous ? 'user-secret' : 'user'}
+                                  size={11}
+                                  color={colors.primary}
+                                />
+                                <Text style={[styles.timelineAuthor, { color: colors.text }]}>
+                                  {authorLabel}
+                                </Text>
+                              </View>
+                              {reviewItem.createdAtFormatted ? (
+                                <Text
+                                  style={[
+                                    styles.timelineDate,
+                                    { color: colors.textMuted, fontVariant: typography.fontVariant },
+                                  ]}
+                                >
+                                  {reviewItem.createdAtFormatted}
+                                </Text>
+                              ) : null}
+                              {reviewNoteText ? (
+                                <Text
+                                  style={[styles.timelineNote, { color: colors.textSecondary }]}
+                                >
+                                  {reviewNoteText}
+                                </Text>
+                              ) : null}
+                            </View>
+                          </View>
+
+                          <View style={styles.actionRow}>
+                            <SaveButton
+                              compact
+                              label="Aprovar esta Correção"
+                              icon="circle-check"
+                              loading={isThisBusy}
+                              disabled={submittingAuthorReview || savingVerification}
+                              numberOfLines={1}
+                              adjustsFontSizeToFit
+                              onPress={() => handleRepairAuthorReview(true, reviewItem)}
+                              style={styles.flexOne}
+                            />
+                            <DangerButton
+                              compact
+                              label="Rejeitar / Ainda está Aberto"
+                              icon="rotate-left"
+                              loading={isThisBusy}
+                              disabled={submittingAuthorReview || savingVerification}
+                              numberOfLines={1}
+                              adjustsFontSizeToFit
+                              onPress={() => handleRepairAuthorReview(false, reviewItem)}
+                              style={styles.flexOne}
+                            />
+                          </View>
+                        </View>
+                      );
+                    })}
                   </View>
+                </View>
+              ) : userAlreadySubmittedPendingReview ? (
+                <View
+                  style={[
+                    styles.sectionCard,
+                    cardShadow,
+                    {
+                      backgroundColor: isDark ? 'rgba(245, 158, 11, 0.14)' : '#FEF3C7',
+                      borderColor: '#F59E0B',
+                      borderWidth: 1,
+                      borderRadius: radiusCard,
+                    },
+                  ]}
+                >
+                  <View style={styles.timelineHeaderRow}>
+                    <FontAwesome6
+                      name="clock"
+                      size={16}
+                      color={isDark ? '#FDE68A' : '#92400E'}
+                    />
+                    <Text
+                      style={[
+                        styles.sectionTitle,
+                        { color: isDark ? '#FDE68A' : '#92400E' },
+                      ]}
+                    >
+                      Revisão já enviada
+                    </Text>
+                  </View>
+                  <Text
+                    style={[
+                      styles.helperText,
+                      { color: isDark ? '#FEF3C7' : '#78350F' },
+                    ]}
+                  >
+                    Você já informou que este local foi tampado. Aguardando avaliação do autor
+                    original do relato.
+                  </Text>
                 </View>
               ) : pendingVerificationDraft ? (
                 <View
@@ -1518,6 +1742,12 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 6,
   },
+  statusPillsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1528,6 +1758,19 @@ const styles = StyleSheet.create({
   },
   statusBadgeText: {
     fontSize: 13,
+    fontWeight: '700',
+  },
+  amberPendingPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    gap: 5,
+  },
+  amberPendingPillText: {
+    fontSize: 11,
     fontWeight: '700',
   },
   pendingReviewSubBadge: {
@@ -1542,6 +1785,24 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     flexShrink: 1,
+  },
+  pendingReviewsList: {
+    gap: 10,
+  },
+  pendingReviewItemCard: {
+    padding: 11,
+    gap: 10,
+  },
+  pendingReviewItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  pendingReviewThumbWrap: {
+    width: 60,
+    height: 60,
+    borderWidth: 1,
+    overflow: 'hidden',
   },
   closeBtn: {
     width: 36,

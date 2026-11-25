@@ -580,13 +580,17 @@ export function MapHomeScreen({
     leafletMapRef.current?.centerOn(newReport.latitude, newReport.longitude, 17);
   }, []);
 
-  const handleVerificationSaved = useCallback((updatedPothole) => {
-    setPendingVerificationDraft(null);
-    setSelectedPothole(updatedPothole);
-    setPotholes((prev) =>
-      prev.map((item) => (item.id === updatedPothole.id ? updatedPothole : item))
-    );
-  }, []);
+  const handleVerificationSaved = useCallback(
+    (updatedPothole) => {
+      setPendingVerificationDraft(null);
+      setSelectedPothole(updatedPothole);
+      setPotholes((prev) =>
+        prev.map((item) => (item.id === updatedPothole.id ? updatedPothole : item))
+      );
+      refreshNotifications();
+    },
+    [refreshNotifications]
+  );
 
   const handleAdminPotholeDeleted = useCallback((deletedId) => {
     setDetailModalVisible(false);
