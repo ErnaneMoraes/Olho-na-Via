@@ -271,3 +271,42 @@ $$;
 
 revoke all on function public.admin_delete_user_account(uuid) from public;
 grant execute on function public.admin_delete_user_account(uuid) to authenticated;
+
+-- RPC segura para redefinição administrativa de senha de qualquer usuário
+create or replace function public.admin_reset_user_password(target_user_id uuid, new_password text)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, auth, extensions
+as $$
+begin
+  if not public.is_app_admin() then
+    raise exception 'Acesso negado: somente administradores podem redefinir senhas.';
+  end if;
+
+  if target_user_id is null then
+    raise exception 'ID de usuário inválido.';
+  end if;
+
+  if char_length(coalesce(new_password, '')) < 6 then
+    raise exception 'A nova senha deve ter pelo menos 6 caracteres.';
+  end if;
+
+  update auth.users
+  set encrypted_password = crypt(new_password, gen_salt('bf')),
+      updated_at = now()
+  where id = target_user_id;
+
+  if not found then
+    raise exception 'Usuário não encontrado.';
+  end if;
+
+  insert into public.admin_audit_logs (admin_user_id, action, target_type, target_id, details)
+  values (auth.uid(), 'RESET_USER_PASSWORD', 'auth_user', target_user_id::text, '{}'::jsonb);
+
+  return true;
+end;
+$$;
+
+revoke all on function public.admin_reset_user_password(uuid, text) from public;
+grant execute on function public.admin_reset_user_password(uuid, text) to authenticated;

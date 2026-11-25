@@ -11,12 +11,14 @@ import {
   StyleSheet,
   Switch,
   Text,
+  TextInput,
   UIManager,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { APP_BUILD_TAG, APP_CHANGELOG, APP_NAME, APP_VERSION } from '../../src/constants/appVersion';
 import { useAppSettings } from '../../src/context/AppSettingsContext';
+import { authService } from '../../src/services/authService';
 import {
   clearDiagnosticLogs,
   formatDiagnosticReportText,
@@ -99,6 +101,14 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
   const [diagFeedback, setDiagFeedback] = useState('');
   const [showQuickGuide, setShowQuickGuide] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [showCurrentPwd, setShowCurrentPwd] = useState(false);
+  const [showNewPwd, setShowNewPwd] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState('');
 
   const isAdmin = Boolean(session?.isAdmin && !session?.isDemo);
 
@@ -118,8 +128,47 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
       setDiagFeedback('');
       setShowQuickGuide(false);
       setShowAdminPanel(false);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmNewPassword('');
+      setShowCurrentPwd(false);
+      setShowNewPwd(false);
+      setPasswordError('');
+      setPasswordSuccess('');
     }
   }, [visible, isAdmin, loadLogs]);
+
+  const handleChangePassword = async () => {
+    if (changingPassword) return;
+    setPasswordError('');
+    setPasswordSuccess('');
+
+    if (!currentPassword) {
+      setPasswordError('Informe sua senha atual.');
+      return;
+    }
+    if (newPassword.length < 6) {
+      setPasswordError('A nova senha deve ter no mínimo 6 caracteres.');
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setPasswordError('A confirmação não confere com a nova senha.');
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      const result = await authService.changeOwnPassword(currentPassword, newPassword);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmNewPassword('');
+      setPasswordSuccess(result?.message || 'Senha alterada com sucesso!');
+    } catch (err) {
+      setPasswordError(err?.message || 'Não foi possível alterar a senha agora.');
+    } finally {
+      setChangingPassword(false);
+    }
+  };
 
   const toggleSection = (key) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -337,7 +386,167 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
               </View>
             </AccordionSection>
 
-            {/* 3. Diagnóstico Anônimo (somente administradores) */}
+            {/* 3. Segurança da Conta (usuários autenticados fora do Modo Demo) */}
+            {session && !session.isDemo ? (
+              <AccordionSection
+                title="Segurança da Conta"
+                icon="lock"
+                isOpen={openSection === 'security'}
+                onToggle={() => toggleSection('security')}
+              >
+                <View style={styles.subsectionList}>
+                  <Text style={[styles.subCardTitle, { color: colors.text }]}>
+                    Alterar Minha Senha
+                  </Text>
+                  <Text style={[styles.helperText, { color: colors.textSecondary }]}>
+                    Confirme sua senha atual antes de definir uma nova senha de acesso.
+                  </Text>
+
+                  <View style={styles.pwdFieldGroup}>
+                    <Text style={[styles.pwdLabel, { color: colors.text }]}>Senha Atual</Text>
+                    <View
+                      style={[
+                        styles.pwdInputWrap,
+                        {
+                          backgroundColor: colors.inputBackground,
+                          borderColor: colors.border,
+                          borderWidth,
+                          borderRadius: radiusInput,
+                        },
+                      ]}
+                    >
+                      <FontAwesome6 name="lock" size={14} color={colors.textMuted} />
+                      <TextInput
+                        value={currentPassword}
+                        onChangeText={setCurrentPassword}
+                        placeholder="Digite sua senha atual"
+                        placeholderTextColor={colors.textMuted}
+                        secureTextEntry={!showCurrentPwd}
+                        autoCapitalize="none"
+                        style={[styles.pwdInput, { color: colors.text }]}
+                      />
+                      <Pressable onPress={() => setShowCurrentPwd((v) => !v)} hitSlop={8}>
+                        <FontAwesome6
+                          name={showCurrentPwd ? 'eye-slash' : 'eye'}
+                          size={15}
+                          color={colors.textMuted}
+                        />
+                      </Pressable>
+                    </View>
+                  </View>
+
+                  <View style={styles.pwdFieldGroup}>
+                    <Text style={[styles.pwdLabel, { color: colors.text }]}>
+                      Nova Senha (mín. 6 caracteres)
+                    </Text>
+                    <View
+                      style={[
+                        styles.pwdInputWrap,
+                        {
+                          backgroundColor: colors.inputBackground,
+                          borderColor: colors.border,
+                          borderWidth,
+                          borderRadius: radiusInput,
+                        },
+                      ]}
+                    >
+                      <FontAwesome6 name="key" size={14} color={colors.textMuted} />
+                      <TextInput
+                        value={newPassword}
+                        onChangeText={setNewPassword}
+                        placeholder="Mínimo de 6 caracteres"
+                        placeholderTextColor={colors.textMuted}
+                        secureTextEntry={!showNewPwd}
+                        autoCapitalize="none"
+                        style={[styles.pwdInput, { color: colors.text }]}
+                      />
+                      <Pressable onPress={() => setShowNewPwd((v) => !v)} hitSlop={8}>
+                        <FontAwesome6
+                          name={showNewPwd ? 'eye-slash' : 'eye'}
+                          size={15}
+                          color={colors.textMuted}
+                        />
+                      </Pressable>
+                    </View>
+                  </View>
+
+                  <View style={styles.pwdFieldGroup}>
+                    <Text style={[styles.pwdLabel, { color: colors.text }]}>
+                      Confirmar Nova Senha
+                    </Text>
+                    <View
+                      style={[
+                        styles.pwdInputWrap,
+                        {
+                          backgroundColor: colors.inputBackground,
+                          borderColor: colors.border,
+                          borderWidth,
+                          borderRadius: radiusInput,
+                        },
+                      ]}
+                    >
+                      <FontAwesome6 name="check" size={14} color={colors.textMuted} />
+                      <TextInput
+                        value={confirmNewPassword}
+                        onChangeText={setConfirmNewPassword}
+                        placeholder="Repita a nova senha"
+                        placeholderTextColor={colors.textMuted}
+                        secureTextEntry={!showNewPwd}
+                        autoCapitalize="none"
+                        style={[styles.pwdInput, { color: colors.text }]}
+                      />
+                    </View>
+                  </View>
+
+                  {passwordError ? (
+                    <View
+                      style={[
+                        styles.pwdFeedbackBanner,
+                        {
+                          backgroundColor: colors.dangerSoft,
+                          borderColor: colors.danger,
+                          borderRadius: radiusInput,
+                        },
+                      ]}
+                    >
+                      <FontAwesome6 name="circle-exclamation" size={14} color={colors.danger} />
+                      <Text style={[styles.pwdFeedbackText, { color: colors.dangerText }]}>
+                        {passwordError}
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {passwordSuccess ? (
+                    <View
+                      style={[
+                        styles.pwdFeedbackBanner,
+                        {
+                          backgroundColor: colors.successSoft,
+                          borderColor: colors.success,
+                          borderRadius: radiusInput,
+                        },
+                      ]}
+                    >
+                      <FontAwesome6 name="circle-check" size={14} color={colors.success} />
+                      <Text style={[styles.pwdFeedbackText, { color: colors.success }]}>
+                        {passwordSuccess}
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  <PrimaryButton
+                    compact
+                    label={changingPassword ? 'Salvando...' : 'Salvar Nova Senha'}
+                    icon="check"
+                    loading={changingPassword}
+                    disabled={changingPassword}
+                    onPress={handleChangePassword}
+                  />
+                </View>
+              </AccordionSection>
+            ) : null}
+
+            {/* 4. Diagnóstico Anônimo (somente administradores) */}
             {isAdmin ? (
               <AccordionSection
                 title="Diagnóstico Anônimo (LGPD)"
@@ -711,6 +920,38 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#8C1D18',
+  },
+  pwdFieldGroup: {
+    gap: 5,
+  },
+  pwdLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  pwdInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    minHeight: 46,
+    gap: 9,
+  },
+  pwdInput: {
+    flex: 1,
+    fontSize: 16,
+    paddingVertical: 9,
+  },
+  pwdFeedbackBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderWidth: 1,
+    gap: 8,
+  },
+  pwdFeedbackText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
   },
 });
 

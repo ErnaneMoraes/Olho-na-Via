@@ -11,17 +11,19 @@ import {
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SharedStyles } from '../../components/StyleSheet/Styles';
-import { DangerButton, SecondaryButton } from '../../components/common/Buttons';
+import { DangerButton, PrimaryButton, SecondaryButton } from '../../components/common/Buttons';
 import { useAppSettings } from '../context/AppSettingsContext';
 import {
   adminDeleteFullAccount,
   adminDeletePothole,
   adminDeletePotholeUpdate,
   adminDeleteProfile,
+  adminResetUserPassword,
   fetchAdminAuditLogs,
   fetchAdminPotholes,
   fetchAdminProfiles,
@@ -36,6 +38,10 @@ function notifyAdminError(title, message) {
     return;
   }
   Alert.alert(title, message);
+}
+
+function notifyAdminInfo(title, message) {
+  notifyAdminError(title, message);
 }
 
 function confirmSingle(title, message, confirmLabel, onConfirmed) {
@@ -86,6 +92,7 @@ function translateAuditAction(action) {
     DELETE_UPDATE: 'Remoção de Comentário/Atualização',
     DELETE_PROFILE: 'Remoção de Perfil Público',
     DELETE_FULL_ACCOUNT: 'Exclusão Completa de Conta',
+    RESET_USER_PASSWORD: 'Redefinição de Senha de Usuário',
   };
   return map[action] || action;
 }
@@ -118,6 +125,11 @@ export function AdminPanelModal({
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
+  const [passwordTargetProfile, setPasswordTargetProfile] = useState(null);
+  const [resetPasswordInput, setResetPasswordInput] = useState('');
+  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetError, setResetError] = useState('');
 
   const topSafePadding =
     Math.max(insets.top, Platform.OS === 'android' ? StatusBar.currentHeight || 24 : 12) + 8;
@@ -152,8 +164,51 @@ export function AdminPanelModal({
   useEffect(() => {
     if (visible && isAdmin) {
       loadCurrentData();
+    } else if (!visible) {
+      setPasswordTargetProfile(null);
+      setResetPasswordInput('');
+      setShowResetPassword(false);
+      setResetError('');
     }
   }, [visible, isAdmin, loadCurrentData]);
+
+  const openResetPasswordPrompt = (profile) => {
+    setPasswordTargetProfile(profile);
+    setResetPasswordInput('');
+    setShowResetPassword(false);
+    setResetError('');
+  };
+
+  const closeResetPasswordPrompt = () => {
+    if (resetBusy) return;
+    setPasswordTargetProfile(null);
+    setResetPasswordInput('');
+    setShowResetPassword(false);
+    setResetError('');
+  };
+
+  const handleConfirmResetPassword = async () => {
+    if (!passwordTargetProfile?.id || resetBusy) return;
+    setResetError('');
+    if (resetPasswordInput.length < 6) {
+      setResetError('A nova senha deve ter pelo menos 6 caracteres.');
+      return;
+    }
+
+    setResetBusy(true);
+    try {
+      await adminResetUserPassword(passwordTargetProfile.id, resetPasswordInput);
+      const targetName = passwordTargetProfile.nickname || shortId(passwordTargetProfile.id);
+      setPasswordTargetProfile(null);
+      setResetPasswordInput('');
+      setShowResetPassword(false);
+      notifyAdminInfo('Senha Redefinida', `Senha redefinida com sucesso para ${targetName}.`);
+    } catch (err) {
+      setResetError(err?.message || 'Não foi possível redefinir a senha do usuário.');
+    } finally {
+      setResetBusy(false);
+    }
+  };
 
   const confirmDeletePothole = (item) => {
     confirmDouble(
@@ -587,7 +642,16 @@ export function AdminPanelModal({
             </View>
             <Text style={[styles.itemMeta, { color: colors.textSecondary }]}>
               UID: {shortId(profile.id)}
+              {profile.email ? ` • ${profile.email}` : ''}
             </Text>
+
+            <SecondaryButton
+              compact
+              label="Alterar Senha"
+              icon="lock"
+              disabled={Boolean(busyId) || resetBusy}
+              onPress={() => openResetPasswordPrompt(profile)}
+            />
 
             <View style={styles.profileActionsRow}>
               <SecondaryButton
@@ -661,6 +725,98 @@ export function AdminPanelModal({
       >
         {renderContent()}
       </ScrollView>
+
+      {passwordTargetProfile ? (
+        <View style={styles.resetOverlay}>
+          <View
+            style={[
+              SharedStyles.contentContainer,
+              styles.resetCard,
+              cardShadow,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                borderWidth,
+                borderRadius: radiusCard,
+              },
+            ]}
+          >
+            <View style={styles.itemTopRow}>
+              <Text style={[styles.resetTitle, { color: colors.text }]}>
+                Alterar Senha do Usuário
+              </Text>
+              <Pressable
+                onPress={closeResetPasswordPrompt}
+                disabled={resetBusy}
+                hitSlop={8}
+                style={[styles.iconBtn, { backgroundColor: colors.surfaceMuted }]}
+              >
+                <FontAwesome6 name="xmark" size={14} color={colors.text} />
+              </Pressable>
+            </View>
+
+            <Text style={[styles.itemMeta, { color: colors.textSecondary }]}>
+              Usuário: {passwordTargetProfile.nickname || 'Cidadão'}
+              {passwordTargetProfile.email
+                ? ` (${passwordTargetProfile.email})`
+                : ` (UID ${shortId(passwordTargetProfile.id)})`}
+            </Text>
+
+            <View
+              style={[
+                styles.resetInputWrap,
+                {
+                  backgroundColor: colors.inputBackground,
+                  borderColor: colors.border,
+                  borderWidth,
+                  borderRadius: radiusInput,
+                },
+              ]}
+            >
+              <FontAwesome6 name="lock" size={14} color={colors.textMuted} />
+              <TextInput
+                value={resetPasswordInput}
+                onChangeText={setResetPasswordInput}
+                placeholder="Nova senha (mín. 6 caracteres)"
+                placeholderTextColor={colors.textMuted}
+                secureTextEntry={!showResetPassword}
+                autoCapitalize="none"
+                style={[styles.resetInput, { color: colors.text }]}
+              />
+              <Pressable onPress={() => setShowResetPassword((v) => !v)} hitSlop={8}>
+                <FontAwesome6
+                  name={showResetPassword ? 'eye-slash' : 'eye'}
+                  size={15}
+                  color={colors.textMuted}
+                />
+              </Pressable>
+            </View>
+
+            {resetError ? (
+              <Text style={[styles.resetErrorText, { color: colors.danger }]}>{resetError}</Text>
+            ) : null}
+
+            <View style={styles.profileActionsRow}>
+              <SecondaryButton
+                compact
+                label="Cancelar"
+                disabled={resetBusy}
+                onPress={closeResetPasswordPrompt}
+                style={styles.flexOne}
+              />
+              <PrimaryButton
+                compact
+                label={resetBusy ? 'Salvando...' : 'Redefinir Senha do Usuário'}
+                icon="check"
+                loading={resetBusy}
+                disabled={resetBusy}
+                onPress={handleConfirmResetPassword}
+                style={styles.flexOne}
+              />
+            </View>
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 
@@ -822,6 +978,39 @@ const styles = StyleSheet.create({
     lineHeight: 15,
     fontWeight: '600',
     color: '#8C1D18',
+  },
+  resetOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    zIndex: 50,
+  },
+  resetCard: {
+    padding: 18,
+    gap: 12,
+  },
+  resetTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    flex: 1,
+  },
+  resetInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    minHeight: 48,
+    gap: 10,
+  },
+  resetInput: {
+    flex: 1,
+    fontSize: 16,
+    paddingVertical: 10,
+  },
+  resetErrorText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
 });
 

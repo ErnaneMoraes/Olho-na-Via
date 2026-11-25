@@ -246,6 +246,31 @@ export async function adminDeleteFullAccount(targetUserId) {
   return true;
 }
 
+/**
+ * Redefine a senha de qualquer usuário via RPC SECURITY DEFINER restrita a administradores.
+ */
+export async function adminResetUserPassword(targetUserId, newPassword) {
+  if (!targetUserId) throw createAdminError('ID da conta inválido.');
+  const rawPassword = String(newPassword || '');
+  if (rawPassword.length < 6) {
+    throw createAdminError('A nova senha deve ter pelo menos 6 caracteres.');
+  }
+
+  await requireAdminSession();
+
+  const { error } = await supabase.rpc('admin_reset_user_password', {
+    target_user_id: targetUserId,
+    new_password: rawPassword,
+  });
+
+  if (error) {
+    throw createAdminError(`Falha ao redefinir senha: ${error.message}`);
+  }
+
+  await recordDiagnosticEvent('ADMIN', 'Senha de usuário redefinida via RPC administrativa');
+  return true;
+}
+
 export function formatAdminRealAuthorLabel(identity, fallbackUserId = null) {
   if (identity?.nickname && identity?.email) {
     return `Postado como Anônimo • Autor real: ${identity.nickname} (${identity.email})`;
@@ -349,14 +374,21 @@ export async function fetchAdminUpdates(limit = 50) {
 
 export async function fetchAdminProfiles(limit = 50) {
   await requireAdminSession();
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id, nickname, created_at')
-    .order('created_at', { ascending: false })
-    .limit(limit);
+  const [{ data, error }, identitiesMap] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('id, nickname, created_at')
+      .order('created_at', { ascending: false })
+      .limit(limit),
+    fetchAdminUserIdentitiesMap(),
+  ]);
 
   if (error) throw createAdminError(`Erro ao carregar perfis: ${error.message}`);
-  return Array.isArray(data) ? data : [];
+  const rows = Array.isArray(data) ? data : [];
+  return rows.map((row) => ({
+    ...row,
+    email: identitiesMap[row.id]?.email || null,
+  }));
 }
 
 export async function fetchAdminAuditLogs(limit = 50) {

@@ -1,8 +1,17 @@
 export const APP_NAME = 'Olho na Via';
-export const APP_VERSION = '1.6.0';
-export const APP_BUILD_TAG = '2026.11.25-fix-upload-rls-photo-verification';
+export const APP_VERSION = '1.6.2';
+export const APP_BUILD_TAG = '2026.11.25-password-management';
 
 export const APP_CHANGELOG = [
+  {
+    version: '1.6.2',
+    date: '25/11/2026',
+    title: 'Alteração de Senha pelo Usuário e Redefinição Administrativa',
+    highlights: [
+      'Adicionada seção "Segurança da Conta" em Configurações para alteração de própria senha com verificação da senha atual.',
+      'Implementada RPC SECURITY DEFINER admin_reset_user_password e modal administrativo "Alterar Senha" na aba Perfis & Contas.',
+    ],
+  },
   {
     version: '1.6.0',
     date: '25/11/2026',
