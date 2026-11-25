@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "Olho na Via",
+    "slug": "olho-na-via",
+    "version": "1.5.1",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/icon.png",
+      "name": "Olho na Via",
+      "lang": "pt-BR"
+    },
+    "android": {
+      "package": "com.ernane.olhonavia",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1A73E8"
+      },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "CAMERA"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "O Olho na Via precisa da sua localização para exibir e reportar buracos na sua cidade."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "O Olho na Via precisa da câmera para fotografar buracos na via."
+        }
+      ],
+      "expo-font",
+      "expo-status-bar"
+    ]
+  }
+}

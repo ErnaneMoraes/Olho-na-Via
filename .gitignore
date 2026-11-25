@@ -1,0 +1,12 @@
+node_modules/
+.expo/
+dist/
+builds/
+*.apk
+.env
+.env.*
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.DS_Store
+Thumbs.db
