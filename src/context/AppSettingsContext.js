@@ -8,6 +8,7 @@ const DEFAULT_SETTINGS = {
   defaultAnonymous: false,
   cameraShutterSound: false,
   darkMode: false,
+  adminModeEnabled: true,
 };
 
 const AppSettingsContext = createContext(null);
@@ -16,6 +17,7 @@ export function AppSettingsProvider({ children }) {
   const [defaultAnonymous, setDefaultAnonymousState] = useState(false);
   const [cameraShutterSound, setCameraShutterSoundState] = useState(false);
   const [darkMode, setDarkModeState] = useState(false);
+  const [adminModeEnabled, setAdminModeEnabledState] = useState(true);
   const [dataVersion, setDataVersion] = useState(0);
   const [isSettingsReady, setIsSettingsReady] = useState(false);
   const settingsRef = useRef({ ...DEFAULT_SETTINGS });
@@ -32,14 +34,18 @@ export function AppSettingsProvider({ children }) {
           const nextDefaultAnonymous = Boolean(parsed.defaultAnonymous);
           const nextShutterSound = Boolean(parsed.cameraShutterSound);
           const nextDarkMode = Boolean(parsed.darkMode);
+          const nextAdminMode =
+            parsed.adminModeEnabled === undefined ? true : Boolean(parsed.adminModeEnabled);
           settingsRef.current = {
             defaultAnonymous: nextDefaultAnonymous,
             cameraShutterSound: nextShutterSound,
             darkMode: nextDarkMode,
+            adminModeEnabled: nextAdminMode,
           };
           setDefaultAnonymousState(nextDefaultAnonymous);
           setCameraShutterSoundState(nextShutterSound);
           setDarkModeState(nextDarkMode);
+          setAdminModeEnabledState(nextAdminMode);
         }
       } catch {
         // Fallback silencioso para padrões seguros
@@ -64,6 +70,9 @@ export function AppSettingsProvider({ children }) {
     setDefaultAnonymousState(Boolean(merged.defaultAnonymous));
     setCameraShutterSoundState(Boolean(merged.cameraShutterSound));
     setDarkModeState(Boolean(merged.darkMode));
+    setAdminModeEnabledState(
+      merged.adminModeEnabled === undefined ? true : Boolean(merged.adminModeEnabled)
+    );
     try {
       await AsyncStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(merged));
     } catch {
@@ -89,6 +98,25 @@ export function AppSettingsProvider({ children }) {
   const toggleDarkMode = useCallback(
     () => persistSettings({ darkMode: !settingsRef.current.darkMode }),
     [persistSettings]
+  );
+
+  const setAdminModeEnabled = useCallback(
+    (value) => persistSettings({ adminModeEnabled: Boolean(value) }),
+    [persistSettings]
+  );
+
+  const toggleAdminMode = useCallback(
+    () => persistSettings({ adminModeEnabled: !settingsRef.current.adminModeEnabled }),
+    [persistSettings]
+  );
+
+  const getAdminFlags = useCallback(
+    (session) => {
+      const isRealAdmin = Boolean(session?.isAdmin && !session?.isDemo);
+      const effectiveIsAdmin = Boolean(isRealAdmin && adminModeEnabled);
+      return { isRealAdmin, effectiveIsAdmin };
+    },
+    [adminModeEnabled]
   );
 
   const notifyDataRestored = useCallback(() => {
@@ -119,6 +147,7 @@ export function AppSettingsProvider({ children }) {
         defaultAnonymous,
         cameraShutterSound,
         darkMode,
+        adminModeEnabled,
       },
       defaultAnonymous,
       setDefaultAnonymous,
@@ -126,6 +155,10 @@ export function AppSettingsProvider({ children }) {
       setPostAnonymously: setDefaultAnonymous,
       cameraShutterSound,
       setCameraShutterSound,
+      adminModeEnabled,
+      setAdminModeEnabled,
+      toggleAdminMode,
+      getAdminFlags,
       dataVersion,
       notifyDataRestored,
       isSettingsReady,
@@ -139,6 +172,10 @@ export function AppSettingsProvider({ children }) {
       setDefaultAnonymous,
       cameraShutterSound,
       setCameraShutterSound,
+      adminModeEnabled,
+      setAdminModeEnabled,
+      toggleAdminMode,
+      getAdminFlags,
       dataVersion,
       notifyDataRestored,
       isSettingsReady,

@@ -60,6 +60,26 @@ async function cleanupReportAllPhotos(report) {
   await Promise.all(tasks);
 }
 
+function maskPotholeForDemo(item) {
+  if (!item) return item;
+  const maskedVerifications = Array.isArray(item.verifications)
+    ? item.verifications.map((v) => ({
+        ...v,
+        authorNickname: 'Cidadão (oculto)',
+        authorUserId: null,
+        isAnonymous: true,
+      }))
+    : [];
+
+  return {
+    ...item,
+    authorNickname: 'Cidadão (oculto)',
+    authorUserId: null,
+    isAnonymous: true,
+    verifications: maskedVerifications,
+  };
+}
+
 async function mapCloudVerificationRow(row) {
   const cachedThumb = await cacheRemoteThumbnail(row.thumb_url);
   const isAnon = Boolean(row.is_anonymous);
@@ -357,9 +377,10 @@ export const SupabasePotholeAdapter = {
     return LocalAsyncStoragePotholeAdapter.applySeedOverrides(seedList);
   },
 
-  async listReports({ bounds } = {}) {
+  async listReports({ bounds, isDemoSession = false } = {}) {
     if (!isSupabaseConfigured()) {
-      return LocalAsyncStoragePotholeAdapter.listReports();
+      const local = await LocalAsyncStoragePotholeAdapter.listReports();
+      return isDemoSession ? local.map(maskPotholeForDemo) : local;
     }
 
     try {
@@ -436,12 +457,14 @@ export const SupabasePotholeAdapter = {
 
       await recordDiagnosticEvent('SYNC', 'Ocorrências sincronizadas da nuvem', {
         count: mappedPotholes.length,
+        maskedForDemo: Boolean(isDemoSession),
       });
 
-      return mappedPotholes;
+      return isDemoSession ? mappedPotholes.map(maskPotholeForDemo) : mappedPotholes;
     } catch {
       await recordDiagnosticEvent('SYNC_FALLBACK', 'Falha de rede; usando cache local');
-      return LocalAsyncStoragePotholeAdapter.listReports();
+      const fallback = await LocalAsyncStoragePotholeAdapter.listReports();
+      return isDemoSession ? fallback.map(maskPotholeForDemo) : fallback;
     }
   },
 
@@ -714,10 +737,11 @@ export const SupabasePotholeAdapter = {
     );
   },
 
-  async getReportById(potholeId) {
+  async getReportById(potholeId, { isDemoSession = false } = {}) {
     if (!potholeId) return null;
     if (!isSupabaseConfigured()) {
-      return LocalAsyncStoragePotholeAdapter.getReportById(potholeId);
+      const localItem = await LocalAsyncStoragePotholeAdapter.getReportById(potholeId);
+      return isDemoSession ? maskPotholeForDemo(localItem) : localItem;
     }
 
     try {
@@ -730,7 +754,8 @@ export const SupabasePotholeAdapter = {
         .single();
 
       if (error || !row) {
-        return LocalAsyncStoragePotholeAdapter.getReportById(potholeId);
+        const localItem = await LocalAsyncStoragePotholeAdapter.getReportById(potholeId);
+        return isDemoSession ? maskPotholeForDemo(localItem) : localItem;
       }
 
       const [{ data: updateRows }, pendingByPothole] = await Promise.all([
@@ -748,14 +773,16 @@ export const SupabasePotholeAdapter = {
         ? await Promise.all(updateRows.map((u) => mapCloudVerificationRow(u)))
         : [];
 
-      return mapCloudPotholeRow(
+      const mapped = await mapCloudPotholeRow(
         row,
         mappedUpdates,
         null,
         pendingByPothole[row.id] || null
       );
+      return isDemoSession ? maskPotholeForDemo(mapped) : mapped;
     } catch {
-      return LocalAsyncStoragePotholeAdapter.getReportById(potholeId);
+      const localItem = await LocalAsyncStoragePotholeAdapter.getReportById(potholeId);
+      return isDemoSession ? maskPotholeForDemo(localItem) : localItem;
     }
   },
 
@@ -773,7 +800,7 @@ export const SupabasePotholeAdapter = {
 export function createPotholeRepository(adapter) {
   return {
     listReports: (options) => adapter.listReports(options),
-    getReportById: (potholeId) => adapter.getReportById(potholeId),
+    getReportById: (potholeId, options) => adapter.getReportById(potholeId, options),
     applySeedOverrides: (seedList) => adapter.applySeedOverrides(seedList),
     createReport: (payload) => adapter.createReport(payload),
     createPothole: (payload) => adapter.createReport(payload),

@@ -302,6 +302,7 @@ export async function submitRepairAuthorReview({
   notificationId = null,
   approvedReview = null,
   approved,
+  isAdminOverride = false,
   reviewerNote = '',
   authorNickname = 'Autor do relato',
 }) {
@@ -318,7 +319,7 @@ export async function submitRepairAuthorReview({
     throw new Error('Sessão expirada ou conta não autenticada. Entre novamente para avaliar.');
   }
 
-  if (pothole?.authorUserId && pothole.authorUserId !== activeUserId) {
+  if (!isAdminOverride && pothole?.authorUserId && pothole.authorUserId !== activeUserId) {
     throw new Error('Apenas o autor original do relato pode aprovar ou reabrir esta correção.');
   }
 
@@ -327,14 +328,22 @@ export async function submitRepairAuthorReview({
     approvedReview?.is_anonymous
       ? 'Usuário Anônimo'
       : approvedReview?.author_nickname || '';
-  const cleanNote =
-    String(reviewerNote || '').trim() ||
-    (approved
+  const defaultNote = isAdminOverride
+    ? approved
+      ? approvedCitizen
+        ? `Administrador aprovou a correção informada por ${approvedCitizen}.`
+        : 'Administrador aprovou e marcou o local como tampado.'
+      : 'Administrador recusou a correção e manteve o relato em aberto.'
+    : approved
       ? approvedCitizen
         ? `Autor original aprovou a correção informada por ${approvedCitizen}.`
         : 'Autor original aprovou a correção informada.'
-      : 'Autor original informou que o problema ainda persiste (reaberto).');
-  const cleanNickname = String(authorNickname || 'Autor do relato').trim();
+      : 'Autor original informou que o problema ainda persiste (reaberto).';
+
+  const cleanNote = String(reviewerNote || '').trim() || defaultNote;
+  const cleanNickname = String(
+    authorNickname || (isAdminOverride ? 'Administrador' : 'Autor do relato')
+  ).trim();
 
   const { data: insertedUpdate, error: insertError } = await supabase
     .from('pothole_updates')
@@ -355,7 +364,7 @@ export async function submitRepairAuthorReview({
 
   if (insertError) {
     throw new Error(
-      insertError.message || 'Não foi possível registrar a avaliação do autor no histórico.'
+      insertError.message || 'Não foi possível registrar a avaliação no histórico.'
     );
   }
 
@@ -380,38 +389,52 @@ export async function submitRepairAuthorReview({
     const decision = approved ? 'approved' : 'rejected';
 
     if (approved || !targetNotificationId) {
-      await supabase
+      let bulkResolveQuery = supabase
         .from('user_notifications')
         .update({
           is_read: true,
           review_decision: decision,
         })
-        .eq('recipient_user_id', activeUserId)
         .eq('pothole_id', targetPotholeId)
         .eq('type', 'repair_review_requested')
         .is('review_decision', null);
+
+      if (!isAdminOverride) {
+        bulkResolveQuery = bulkResolveQuery.eq('recipient_user_id', activeUserId);
+      }
+
+      await bulkResolveQuery;
     }
 
     if (targetNotificationId) {
-      await supabase
+      let singleResolveQuery = supabase
         .from('user_notifications')
         .update({
           is_read: true,
           review_decision: decision,
         })
-        .eq('id', targetNotificationId)
-        .eq('recipient_user_id', activeUserId);
+        .eq('id', targetNotificationId);
+
+      if (!isAdminOverride) {
+        singleResolveQuery = singleResolveQuery.eq('recipient_user_id', activeUserId);
+      }
+
+      await singleResolveQuery;
     }
   } catch (err) {
     await recordAppErrorLog('notificationService.markReviewNotification', err);
   }
 
-  await recordDiagnosticEvent('AVALIACAO_AUTOR', 'Autor avaliou correção informada', {
-    potholeId: targetPotholeId,
-    selectedNotificationId: targetNotificationId,
-    approved: Boolean(approved),
-    nextStatus,
-  });
+  await recordDiagnosticEvent(
+    isAdminOverride ? 'MOD_ADMIN_STATUS' : 'AVALIACAO_AUTOR',
+    isAdminOverride ? 'Administrador moderou status sem foto' : 'Autor avaliou correção informada',
+    {
+      potholeId: targetPotholeId,
+      selectedNotificationId: targetNotificationId,
+      approved: Boolean(approved),
+      nextStatus,
+    }
+  );
 
   return {
     updateId: insertedUpdate?.id || null,
@@ -419,4 +442,21 @@ export async function submitRepairAuthorReview({
     note: cleanNote,
     createdAt: insertedUpdate?.created_at || new Date().toISOString(),
   };
+}
+
+/**
+ * Permite que administradores ativos aprovem ou recusem diretamente o status de qualquer relato sem foto.
+ */
+export async function submitAdminStatusModeration({
+  pothole,
+  approved,
+  adminNickname = 'Administrador',
+}) {
+  return submitRepairAuthorReview({
+    pothole,
+    potholeId: pothole?.id,
+    approved,
+    isAdminOverride: true,
+    authorNickname: adminNickname,
+  });
 }

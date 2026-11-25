@@ -123,6 +123,9 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
     setDefaultAnonymous,
     cameraShutterSound,
     setCameraShutterSound,
+    adminModeEnabled,
+    setAdminModeEnabled,
+    radiusCard,
     radiusInput,
     borderWidth,
     cardShadow,
@@ -148,7 +151,14 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
   const { width: windowWidth } = useWindowDimensions();
   const isWeb = Platform.OS === 'web';
   const isCompactWidth = windowWidth < 600;
-  const isAdmin = Boolean(session?.isAdmin && !session?.isDemo);
+  const isRealAdmin = Boolean(session?.isAdmin && !session?.isDemo);
+  const effectiveIsAdmin = Boolean(isRealAdmin && adminModeEnabled);
+
+  useEffect(() => {
+    if (!effectiveIsAdmin && showAdminPanel) {
+      setShowAdminPanel(false);
+    }
+  }, [effectiveIsAdmin, showAdminPanel]);
 
   const topSafePadding = isWeb
     ? 16
@@ -183,8 +193,10 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
     if (visible) {
       setOpenSection(null);
       setAnonToastMsg('');
-      if (isAdmin) {
+      if (effectiveIsAdmin) {
         loadLogs();
+      } else {
+        setLogs([]);
       }
       setDiagFeedback('');
       setShowQuickGuide(false);
@@ -197,7 +209,7 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
       setPasswordError('');
       setPasswordSuccess('');
     }
-  }, [visible, isAdmin, loadLogs]);
+  }, [visible, effectiveIsAdmin, loadLogs]);
 
   const handleChangePassword = async () => {
     if (changingPassword) return;
@@ -353,6 +365,45 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
         showsVerticalScrollIndicator={false}
       >
           <View style={styles.accordionsContainer}>
+            {/* Toggle exclusivo de Modo Administrador para admins reais */}
+            {isRealAdmin ? (
+              <View
+                style={[
+                  styles.accordionCard,
+                  cardShadow,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: adminModeEnabled ? colors.adminCardBorder : colors.border,
+                    borderWidth,
+                    borderRadius: radiusCard,
+                    padding: 14,
+                  },
+                ]}
+              >
+                <View style={styles.switchRow}>
+                  <View style={styles.switchInfo}>
+                    <Text style={[styles.switchTitle, { color: colors.text }]}>
+                      Ativar Modo Administrador
+                    </Text>
+                    <Text style={[styles.helperText, { color: colors.textSecondary }]}>
+                      Desative para testar e usar o aplicativo exatamente como um cidadão comum.
+                    </Text>
+                  </View>
+                  <Switch
+                    value={adminModeEnabled}
+                    onValueChange={(nextVal) => {
+                      setAdminModeEnabled(nextVal);
+                      if (!nextVal && (openSection === 'diagnostics' || openSection === 'admin')) {
+                        setOpenSection(null);
+                      }
+                    }}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                    thumbColor="#FFFFFF"
+                  />
+                </View>
+              </View>
+            ) : null}
+
             {/* 0. Perfil & Apelido */}
             <AccordionSection
               title="Perfil & Apelido"
@@ -379,7 +430,7 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
                     Tipo de conta:{' '}
                     {session?.isDemo
                       ? 'Modo Demonstração (Somente Leitura)'
-                      : isAdmin
+                      : effectiveIsAdmin
                         ? 'Administrador Autorizado'
                         : 'Cidadão Autenticado'}
                   </Text>
@@ -681,8 +732,8 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
               </AccordionSection>
             ) : null}
 
-            {/* 4. Diagnóstico Anônimo (somente administradores) */}
-            {isAdmin ? (
+            {/* 4. Diagnóstico Anônimo (somente administradores com Modo Admin ativo) */}
+            {effectiveIsAdmin ? (
               <AccordionSection
                 title="Diagnóstico Anônimo (LGPD)"
                 icon="stethoscope"
@@ -838,7 +889,7 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
                   onPress={() => setShowQuickGuide(true)}
                 />
 
-                {isAdmin ? (
+                {effectiveIsAdmin ? (
                   <>
                     <Text style={[styles.helperText, { color: colors.textSecondary }]}>
                       Histórico de Alterações (Changelog) • Compilação: {APP_BUILD_TAG}
@@ -873,7 +924,7 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
                 ) : null}
               </View>
             </AccordionSection>
-            {isAdmin ? (
+            {effectiveIsAdmin ? (
               <AccordionSection
                 title="Área Restrita — Moderação Administrativa"
                 icon="gavel"
@@ -922,7 +973,7 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
         <View style={[styles.fullScreenWrap, { backgroundColor: colors.background }]}>
           <OnboardingScreen isReplay onComplete={() => setShowQuickGuide(false)} />
         </View>
-      ) : showAdminPanel && session?.isAdmin ? (
+      ) : showAdminPanel && effectiveIsAdmin ? (
         isWeb ? (
           <View
             style={[

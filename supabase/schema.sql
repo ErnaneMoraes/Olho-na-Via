@@ -61,8 +61,10 @@ create index if not exists idx_potholes_lat_lng
 
 alter table public.potholes enable row level security;
 
+drop policy if exists "Buracos visíveis para leitura pública" on public.potholes;
 create policy "Buracos visíveis para leitura pública"
   on public.potholes for select
+  to anon, authenticated
   using (true);
 
 create policy "Usuários autenticados publicam buracos mantendo vínculo interno"
@@ -89,6 +91,13 @@ create policy "Autor original atualiza status do proprio relato"
   to authenticated
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id and status in ('open', 'fixed'));
+
+drop policy if exists "Administradores atualizam status de qualquer relato" on public.potholes;
+create policy "Administradores atualizam status de qualquer relato"
+  on public.potholes for update
+  to authenticated
+  using (public.is_admin())
+  with check (public.is_admin() and status in ('open', 'fixed'));
 
 -- 3. Histórico de verificações comunitárias ("Continua Aberto" / "Já foi Tampado")
 create table if not exists public.pothole_updates (
@@ -121,8 +130,10 @@ create index if not exists idx_pothole_updates_pothole_id
 
 alter table public.pothole_updates enable row level security;
 
+drop policy if exists "Verificações visíveis para leitura pública" on public.pothole_updates;
 create policy "Verificações visíveis para leitura pública"
   on public.pothole_updates for select
+  to anon, authenticated
   using (true);
 
 create policy "Usuários autenticados registram verificações mantendo vínculo interno"
@@ -366,6 +377,7 @@ alter table public.user_notifications enable row level security;
 drop policy if exists "Recipients can view own notifications" on public.user_notifications;
 create policy "Recipients can view own notifications"
   on public.user_notifications for select
+  to anon, authenticated
   using (
     auth.uid() = recipient_user_id
     or auth.uid() = actor_user_id
@@ -376,8 +388,8 @@ drop policy if exists "Recipients can update own notifications" on public.user_n
 create policy "Recipients can update own notifications"
   on public.user_notifications for update
   to authenticated
-  using (auth.uid() = recipient_user_id)
-  with check (auth.uid() = recipient_user_id);
+  using (auth.uid() = recipient_user_id or public.is_admin())
+  with check (auth.uid() = recipient_user_id or public.is_admin());
 
 drop policy if exists "Authenticated users can notify repair review" on public.user_notifications;
 create policy "Authenticated users can notify repair review"

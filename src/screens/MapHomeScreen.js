@@ -50,7 +50,7 @@ function getWebPositionWithTimeout(timeoutMs = GPS_TIMEOUT_MS) {
     navigator.geolocation.getCurrentPosition(
       (pos) => resolve(pos),
       (err) => reject(err),
-      { enableHighAccuracy: false, timeout: timeoutMs, maximumAge: 60000 }
+      { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 15000 }
     );
   });
 }
@@ -210,7 +210,7 @@ export function MapHomeScreen({
         });
 
         let combined = reports;
-        if (coordsToUse && (!isSupabaseReady || (isDemoRef.current && reports.length === 0))) {
+        if (coordsToUse && !isSupabaseReady) {
           const rawSeeds = generateSeedPotholes(coordsToUse.latitude, coordsToUse.longitude);
           const mergedSeeds = await potholeRepository.applySeedOverrides(rawSeeds);
           combined = [...reports, ...mergedSeeds];
@@ -435,7 +435,7 @@ export function MapHomeScreen({
         const roundedKey = `${Number(center.lat).toFixed(4)},${Number(center.lng).toFixed(4)},${zoom}`;
         if (roundedKey === lastFetchedKeyRef.current) return;
 
-        if (!isDemoRef.current && isSupabaseConfigured() && lastFetchedCenterRef.current) {
+        if (isSupabaseConfigured() && lastFetchedCenterRef.current) {
           const dLat = Math.abs(center.lat - lastFetchedCenterRef.current.latitude);
           const dLng = Math.abs(center.lng - lastFetchedCenterRef.current.longitude);
           if (dLat > VIEWPORT_REFETCH_THRESHOLD || dLng > VIEWPORT_REFETCH_THRESHOLD) {

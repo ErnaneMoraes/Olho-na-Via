@@ -1,8 +1,19 @@
 export const APP_NAME = 'Olho na Via';
-export const APP_VERSION = '1.7.1';
-export const APP_BUILD_TAG = '2026.11.25-yellow-review-status-pins';
+export const APP_VERSION = '1.7.2';
+export const APP_BUILD_TAG = '2026.11.25-admin-toggle-live-demo';
 
 export const APP_CHANGELOG = [
+  {
+    version: '1.7.2',
+    date: '25/11/2026',
+    title: 'Alternância Modo Admin, Moderação Global Sem Foto, Cabeçalho Limpo e Demo Real',
+    highlights: [
+      'Adicionada opção "Ativar Modo Administrador" em Configurações (exclusiva para admins reais) permitindo alternar entre visão administrativa e experiência comum de cidadão.',
+      'Administradores com Modo Admin ativo agora podem aprovar/recusar qualquer revisão pendente ou alterar diretamente o status de qualquer relato no mapa sem exigir foto.',
+      'Cabeçalho do modal simplificado para exibir apenas uma única pílula limpa ("Revisão solicitada (N)") quando há revisões pendentes.',
+      'Modo Demonstração agora carrega exclusivamente relatos reais da nuvem centralizados no GPS atual do visitante e mascara todos os nomes de autores como "Cidadão (oculto)".',
+    ],
+  },
   {
     version: '1.7.1',
     date: '25/11/2026',

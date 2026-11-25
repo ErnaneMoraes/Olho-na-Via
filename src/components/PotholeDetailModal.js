@@ -25,6 +25,7 @@ import {
   DangerButton,
   PrimaryButton,
   SaveButton,
+  SecondaryButton,
 } from '../../components/common/Buttons';
 import { useAppSettings } from '../context/AppSettingsContext';
 import {
@@ -37,6 +38,7 @@ import { reverseGeocodeCoordinate } from '../services/geocodingService';
 import {
   fetchPendingRepairReviewForPothole,
   fetchPendingReviewsForPothole,
+  submitAdminStatusModeration,
   submitRepairAuthorReview,
 } from '../services/notificationService';
 import { deletePotholePhotos } from '../services/potholeMediaService';
@@ -106,6 +108,7 @@ export function PotholeDetailModal({
   const {
     colors,
     isDark,
+    adminModeEnabled,
     radiusCard,
     radiusButton,
     radiusInput,
@@ -114,6 +117,9 @@ export function PotholeDetailModal({
     typography,
     notifyDataRestored,
   } = useAppSettings();
+
+  const isDemo = Boolean(session?.isDemo);
+  const effectiveIsAdmin = Boolean(session?.isAdmin && !isDemo && adminModeEnabled);
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const isWeb = Platform.OS === 'web';
@@ -318,7 +324,7 @@ export function PotholeDetailModal({
   }, [pendingVerificationDraft, initialAnonymous]);
 
   useEffect(() => {
-    if (!visible || !session?.isAdmin || session?.isDemo || !pothole) {
+    if (!visible || !effectiveIsAdmin || !pothole) {
       setAdminIdentities({});
       return;
     }
@@ -337,7 +343,7 @@ export function PotholeDetailModal({
     return () => {
       active = false;
     };
-  }, [visible, session?.isAdmin, session?.isDemo, pothole]);
+  }, [visible, effectiveIsAdmin, pothole]);
 
   const animateDismiss = useCallback(() => {
     if (savingRef.current || isClosingRef.current) return;
@@ -549,8 +555,11 @@ export function PotholeDetailModal({
   };
 
   const handleRepairAuthorReview = async (approved, targetReview = null) => {
-    if (!pothole || submittingAuthorReview || savingVerification) return;
+    if (!pothole || submittingAuthorReview || savingVerification || adminBusy) return;
     const selectedId = targetReview?.id || activePendingReview?.id || null;
+    const isAdminOverride = Boolean(
+      effectiveIsAdmin && (!pothole.authorUserId || pothole.authorUserId !== session?.userId)
+    );
     setAuthorReviewError('');
     setAuthorReviewFeedback('');
     setSubmittingAuthorReview(true);
@@ -562,7 +571,9 @@ export function PotholeDetailModal({
         selectedNotificationId: selectedId,
         approvedReview: targetReview,
         approved,
-        authorNickname: session?.nickname || 'Autor do relato',
+        isAdminOverride,
+        authorNickname:
+          session?.nickname || (isAdminOverride ? 'Administrador' : 'Autor do relato'),
       });
 
       if (approved) {
@@ -584,7 +595,8 @@ export function PotholeDetailModal({
           statusLabel: nextStatus === 'fixed' ? 'Já foi Tampado' : 'Continua Aberto',
           note: reviewRes.note,
           isAnonymous: false,
-          authorNickname: session?.nickname || 'Autor do relato',
+          authorNickname:
+            session?.nickname || (isAdminOverride ? 'Administrador' : 'Autor do relato'),
           authorUserId: session?.userId || null,
           thumbUri: null,
           fullUri: null,
@@ -595,6 +607,7 @@ export function PotholeDetailModal({
           ...pothole,
           status: nextStatus,
           statusLabel: nextStatus === 'fixed' ? 'Tampado' : 'Aberto',
+          pendingReviewCount: nextStatus === 'fixed' ? 0 : pothole.pendingReviewCount,
           verifications: [entry, ...(Array.isArray(pothole.verifications) ? pothole.verifications : [])],
         };
       }
@@ -606,11 +619,11 @@ export function PotholeDetailModal({
 
       const successText = approved
         ? 'Correção aprovada! O relato agora está confirmado como tampado.'
-        : 'Revisão rejeitada! O relato segue aberto no mapa para outros motoristas.';
+        : 'Revisão recusada! O relato segue aberto no mapa para outros motoristas.';
       setAuthorReviewFeedback(successText);
     } catch (err) {
       setAuthorReviewError(
-        err?.message || 'Não foi possível registrar sua avaliação da correção.'
+        err?.message || 'Não foi possível registrar a avaliação da correção.'
       );
     } finally {
       setSubmittingAuthorReview(false);
@@ -618,11 +631,73 @@ export function PotholeDetailModal({
     }
   };
 
+  const handleAdminDirectModeration = async (approved) => {
+    if (!pothole?.id || !effectiveIsAdmin || adminBusy || submittingAuthorReview) return;
+    setAuthorReviewError('');
+    setAuthorReviewFeedback('');
+    setAdminBusy(true);
+    try {
+      const reviewRes = await submitAdminStatusModeration({
+        pothole,
+        approved,
+        adminNickname: session?.nickname || 'Administrador',
+      });
+
+      if (approved || effectivePendingReviews.length > 0) {
+        setActivePendingReview(null);
+        setPendingReviews([]);
+      }
+
+      let refreshed = await potholeRepository.getReportById(pothole.id);
+      if (!refreshed) {
+        const nextStatus = reviewRes.status;
+        const entry = {
+          id: reviewRes.updateId || `adm_${Date.now()}`,
+          status: nextStatus,
+          statusLabel: nextStatus === 'fixed' ? 'Já foi Tampado' : 'Continua Aberto',
+          note: reviewRes.note,
+          isAnonymous: false,
+          authorNickname: session?.nickname || 'Administrador',
+          authorUserId: session?.userId || null,
+          thumbUri: null,
+          fullUri: null,
+          createdAt: formatDateTimePtBr(reviewRes.createdAt),
+          createdAtIso: reviewRes.createdAt,
+        };
+        refreshed = {
+          ...pothole,
+          status: nextStatus,
+          statusLabel: nextStatus === 'fixed' ? 'Tampado' : 'Aberto',
+          pendingReviewCount: 0,
+          verifications: [entry, ...(Array.isArray(pothole.verifications) ? pothole.verifications : [])],
+        };
+      }
+
+      notifyDataRestored();
+      onVerificationSaved?.(refreshed);
+      onAuthorReviewCompleted?.();
+      await loadPendingReviews();
+
+      setAuthorReviewFeedback(
+        approved
+          ? 'Status atualizado pelo administrador: relato marcado como tampado.'
+          : 'Status atualizado pelo administrador: relato mantido em aberto.'
+      );
+    } catch (err) {
+      notifyUser(
+        'Erro de Moderação',
+        err?.message || 'Não foi possível alterar o status administrativo do relato.'
+      );
+    } finally {
+      setAdminBusy(false);
+    }
+  };
+
   if (!pothole) {
     return null;
   }
 
-  const canModerateCloud = Boolean(session?.isAdmin && pothole?.isCloudReport);
+  const canModerateCloud = Boolean(effectiveIsAdmin && pothole?.isCloudReport);
   const isFixed = pothole.status === 'fixed';
   const isPotholeOpen = !isFixed;
   const effectivePendingReviews =
@@ -637,38 +712,44 @@ export function PotholeDetailModal({
       : Math.max(effectivePendingReviews.length, Number(pothole?.pendingReviewCount) || 0)
     : 0;
   const hasPendingReviews = isPotholeOpen && displayedPendingCount > 0;
-  const isAuthorWithPendingReviews = Boolean(
+  const isAuthorOwner = Boolean(
+    session && !isDemo && pothole?.authorUserId && pothole.authorUserId === session.userId
+  );
+  const isAuthorOrAdminWithPendingReviews = Boolean(
     session &&
-      !session.isDemo &&
+      !isDemo &&
       pothole?.isCloudReport &&
-      pothole?.authorUserId &&
-      pothole.authorUserId === session.userId &&
       hasPendingReviews &&
-      effectivePendingReviews.length > 0
+      effectivePendingReviews.length > 0 &&
+      (isAuthorOwner || effectiveIsAdmin)
   );
   const userAlreadySubmittedPendingReview = Boolean(
     session &&
-      !session.isDemo &&
-      !isAuthorWithPendingReviews &&
+      !isDemo &&
+      !isAuthorOrAdminWithPendingReviews &&
       hasPendingReviews &&
       effectivePendingReviews.some((r) => r.actor_user_id === session.userId)
   );
-  const pendingPillLabel =
-    displayedPendingCount === 1
-      ? '1 revisão pendente'
-      : `${displayedPendingCount} revisões pendentes`;
 
   const amberBg = isDark ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7';
   const amberBorder = '#F59E0B';
   const amberText = isDark ? '#FDE68A' : '#92400E';
   const amberAccent = isDark ? '#F59E0B' : '#D97706';
 
-  const statusColor = isFixed ? colors.success : hasPendingReviews ? amberText : colors.danger;
-  const statusSoft = isFixed ? colors.successSoft : hasPendingReviews ? amberBg : colors.dangerSoft;
+  const statusColor = isFixed
+    ? colors.success
+    : hasPendingReviews
+      ? colors.warning
+      : colors.danger;
+  const statusSoft = isFixed
+    ? colors.successSoft
+    : hasPendingReviews
+      ? colors.surfaceMuted
+      : colors.dangerSoft;
   const statusBadgeText = isFixed
     ? 'Já foi Tampado'
     : hasPendingReviews
-      ? 'Revisão solicitada'
+      ? `Revisão solicitada (${displayedPendingCount})`
       : 'Buraco Aberto';
   const statusBadgeIcon = isFixed
     ? 'circle-check'
@@ -741,72 +822,29 @@ export function PotholeDetailModal({
               <View style={[styles.dragHandlePill, { backgroundColor: colors.border }]} />
 
               <View style={[SharedStyles.contentContainer, styles.header]}>
-                <View style={styles.statusHeaderStack}>
-                  <View style={styles.statusPillsRow}>
-                    <View
-                      style={[
-                        styles.statusBadge,
-                        {
-                          backgroundColor: statusSoft,
-                          borderColor: !isFixed && hasPendingReviews ? amberBorder : 'transparent',
-                          borderWidth: !isFixed && hasPendingReviews ? 1 : 0,
-                        },
-                      ]}
-                    >
-                      <FontAwesome6
-                        name={statusBadgeIcon}
-                        size={13}
-                        color={statusColor}
-                      />
-                      <Text style={[styles.statusBadgeText, { color: statusColor }]}>
-                        {statusBadgeText}
-                      </Text>
-                    </View>
-
-                    {hasPendingReviews ? (
-                      <View
-                        style={[
-                          styles.amberPendingPill,
-                          {
-                            backgroundColor: amberBg,
-                            borderColor: amberBorder,
-                          },
-                        ]}
-                      >
-                        <FontAwesome6
-                          name="clock"
-                          size={11}
-                          color={amberText}
-                        />
-                        <Text
-                          numberOfLines={1}
-                          style={[
-                            styles.amberPendingPillText,
-                            { color: amberText },
-                          ]}
-                        >
-                          {pendingPillLabel}
-                        </Text>
-                      </View>
-                    ) : null}
-                  </View>
-
-                  {isAuthorWithPendingReviews ? (
-                    <View
-                      style={[
-                        styles.pendingReviewSubBadge,
-                        { backgroundColor: colors.warningSoft },
-                      ]}
-                    >
-                      <FontAwesome6 name="bell" size={11} color={colors.warningText} />
-                      <Text
-                        numberOfLines={1}
-                        style={[styles.pendingReviewSubBadgeText, { color: colors.warningText }]}
-                      >
-                        Correção sugerida — aguardando sua avaliação
-                      </Text>
-                    </View>
-                  ) : null}
+                <View
+                  style={[
+                    styles.statusBadge,
+                    {
+                      backgroundColor: statusSoft,
+                      borderColor: !isFixed && hasPendingReviews ? colors.border : 'transparent',
+                      borderWidth: !isFixed && hasPendingReviews ? 1 : 0,
+                    },
+                  ]}
+                >
+                  <FontAwesome6 name={statusBadgeIcon} size={13} color={statusColor} />
+                  <Text
+                    numberOfLines={1}
+                    style={[
+                      styles.statusBadgeText,
+                      {
+                        color:
+                          !isFixed && hasPendingReviews ? colors.text : statusColor,
+                      },
+                    ]}
+                  >
+                    {statusBadgeText}
+                  </Text>
                 </View>
 
                 <Pressable
@@ -914,27 +952,30 @@ export function PotholeDetailModal({
                     style={[
                       styles.authorBadge,
                       {
-                        backgroundColor: pothole.isAnonymous
-                          ? colors.surfaceMuted
-                          : colors.accentSoft,
+                        backgroundColor:
+                          isDemo || pothole.isAnonymous ? colors.surfaceMuted : colors.accentSoft,
                         borderRadius: radiusButton,
                       },
                     ]}
                   >
                     <FontAwesome6
-                      name={pothole.isAnonymous ? 'user-secret' : 'user'}
+                      name={isDemo || pothole.isAnonymous ? 'user-secret' : 'user'}
                       size={13}
-                      color={pothole.isAnonymous ? colors.textSecondary : colors.primary}
+                      color={isDemo || pothole.isAnonymous ? colors.textSecondary : colors.primary}
                     />
                     <Text
                       style={[
                         styles.authorName,
-                        { color: pothole.isAnonymous ? colors.text : colors.primary },
+                        { color: isDemo || pothole.isAnonymous ? colors.text : colors.primary },
                       ]}
                     >
-                      {pothole.isAnonymous ? 'Usuário Anônimo' : pothole.authorNickname}
+                      {isDemo
+                        ? 'Cidadão (oculto)'
+                        : pothole.isAnonymous
+                          ? 'Usuário Anônimo'
+                          : pothole.authorNickname}
                     </Text>
-                    {pothole.isAnonymous ? (
+                    {!isDemo && pothole.isAnonymous ? (
                       <FontAwesome6 name="shield-halved" size={12} color={colors.textMuted} />
                     ) : null}
                   </View>
@@ -949,7 +990,7 @@ export function PotholeDetailModal({
                   </Text>
                 </View>
 
-                {session?.isAdmin && !session?.isDemo && pothole.isAnonymous ? (
+                {effectiveIsAdmin && pothole.isAnonymous ? (
                   <View
                     style={[
                       styles.adminAuthorBadge,
@@ -1053,7 +1094,7 @@ export function PotholeDetailModal({
                     </View>
                   </View>
                 </View>
-              ) : isAuthorWithPendingReviews ? (
+              ) : isAuthorOrAdminWithPendingReviews ? (
                 <View
                   style={[
                     styles.sectionCard,
@@ -1087,9 +1128,11 @@ export function PotholeDetailModal({
                       const reviewThumb = reviewItem.thumb_url || reviewItem.full_url;
                       const isThisBusy =
                         submittingAuthorReview && submittingReviewId === reviewItem.id;
-                      const authorLabel = reviewItem.is_anonymous
-                        ? 'Usuário Anônimo'
-                        : reviewItem.author_nickname || 'Cidadão colaborador';
+                      const authorLabel = isDemo
+                        ? 'Cidadão (oculto)'
+                        : reviewItem.is_anonymous
+                          ? 'Usuário Anônimo'
+                          : reviewItem.author_nickname || 'Cidadão colaborador';
                       const reviewNoteText = reviewItem.note || reviewItem.comment || '';
 
                       return (
@@ -1447,7 +1490,7 @@ export function PotholeDetailModal({
                 </View>
               )}
 
-              {/* Barra administrativa restrita (visível apenas quando isAdmin === true) */}
+              {/* Barra administrativa restrita (visível apenas quando effectiveIsAdmin === true) */}
               {canModerateCloud ? (
                 <View
                   style={[
@@ -1466,12 +1509,37 @@ export function PotholeDetailModal({
                       Moderação Administrativa
                     </Text>
                   </View>
+                  <View style={styles.actionRow}>
+                    <SaveButton
+                      compact
+                      label="Aprovar / Marcar como Tampado"
+                      icon="circle-check"
+                      onPress={() => handleAdminDirectModeration(true)}
+                      loading={adminBusy}
+                      disabled={adminBusy || submittingAuthorReview}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      style={styles.flexOne}
+                    />
+                    <SecondaryButton
+                      compact
+                      label="Recusar / Manter em Aberto"
+                      icon="rotate-left"
+                      onPress={() => handleAdminDirectModeration(false)}
+                      loading={adminBusy}
+                      disabled={adminBusy || submittingAuthorReview}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      style={styles.flexOne}
+                    />
+                  </View>
                   <DangerButton
                     compact
                     label={adminBusy ? 'Excluindo...' : 'Excluir Registro e Fotos (Admin)'}
                     icon="trash-can"
                     onPress={handleAdminDeletePotholePress}
                     loading={adminBusy}
+                    disabled={adminBusy || submittingAuthorReview}
                   />
                 </View>
               ) : null}
@@ -1588,15 +1656,19 @@ export function PotholeDetailModal({
                             <View style={styles.flexOne}>
                               <View style={styles.timelineAuthorRow}>
                                 <FontAwesome6
-                                  name={entry.isAnonymous ? 'user-secret' : 'user'}
+                                  name={isDemo || entry.isAnonymous ? 'user-secret' : 'user'}
                                   size={11}
                                   color={colors.textSecondary}
                                 />
                                 <Text style={[styles.timelineAuthor, { color: colors.text }]}>
-                                  {entry.isAnonymous ? 'Usuário Anônimo' : entry.authorNickname}
+                                  {isDemo
+                                    ? 'Cidadão (oculto)'
+                                    : entry.isAnonymous
+                                      ? 'Usuário Anônimo'
+                                      : entry.authorNickname}
                                 </Text>
                               </View>
-                              {session?.isAdmin && !session?.isDemo && entry.isAnonymous ? (
+                              {effectiveIsAdmin && entry.isAnonymous ? (
                                 <View
                                   style={[
                                     styles.adminAuthorBadge,
