@@ -1,8 +1,17 @@
 export const APP_NAME = 'Olho na Via';
-export const APP_VERSION = '1.7.2';
-export const APP_BUILD_TAG = '2026.11.25-admin-toggle-live-demo';
+export const APP_VERSION = '1.7.3';
+export const APP_BUILD_TAG = '2026.11.25-clean-admin-moderation-buttons';
 
 export const APP_CHANGELOG = [
+  {
+    version: '1.7.3',
+    date: '25/11/2026',
+    title: 'Moderação Administrativa Limpa e Botões Aprovar / Recusar Sem Corte',
+    highlights: [
+      'Ocultado o cartão cidadão "Atualizar Situação da Via" enquanto o Modo Administrador está ativo (reaparecendo automaticamente ao desativar o Modo Admin em Configurações).',
+      'Encurtados os botões da moderação administrativa e avaliação admin de revisões para "Aprovar" e "Recusar" com centralização perfeita e overflow protegido para evitar vazamento de ícone.',
+    ],
+  },
   {
     version: '1.7.2',
     date: '25/11/2026',

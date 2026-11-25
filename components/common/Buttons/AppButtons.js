@@ -132,10 +132,11 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   compactButton: {
     minHeight: 40,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 8,
   },
   content: {
@@ -143,6 +144,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
+    maxWidth: '100%',
   },
   label: {
     fontSize: 15,

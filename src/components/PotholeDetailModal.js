@@ -1214,25 +1214,25 @@ export function PotholeDetailModal({
                           <View style={styles.actionRow}>
                             <SaveButton
                               compact
-                              label="Aprovar esta Correção"
+                              label={effectiveIsAdmin ? 'Aprovar' : 'Aprovar esta Correção'}
                               icon="circle-check"
                               loading={isThisBusy}
                               disabled={submittingAuthorReview || savingVerification}
                               numberOfLines={1}
                               adjustsFontSizeToFit
                               onPress={() => handleRepairAuthorReview(true, reviewItem)}
-                              style={styles.flexOne}
+                              style={[styles.flexOne, styles.moderationBtn]}
                             />
                             <DangerButton
                               compact
-                              label="Rejeitar / Ainda está Aberto"
+                              label={effectiveIsAdmin ? 'Recusar' : 'Rejeitar / Ainda está Aberto'}
                               icon="rotate-left"
                               loading={isThisBusy}
                               disabled={submittingAuthorReview || savingVerification}
                               numberOfLines={1}
                               adjustsFontSizeToFit
                               onPress={() => handleRepairAuthorReview(false, reviewItem)}
-                              style={styles.flexOne}
+                              style={[styles.flexOne, styles.moderationBtn]}
                             />
                           </View>
                         </View>
@@ -1450,7 +1450,7 @@ export function PotholeDetailModal({
                     />
                   </View>
                 </View>
-              ) : (
+              ) : effectiveIsAdmin ? null : (
                 <View
                   style={[
                     styles.sectionCard,
@@ -1512,25 +1512,25 @@ export function PotholeDetailModal({
                   <View style={styles.actionRow}>
                     <SaveButton
                       compact
-                      label="Aprovar / Marcar como Tampado"
+                      label="Aprovar"
                       icon="circle-check"
                       onPress={() => handleAdminDirectModeration(true)}
                       loading={adminBusy}
                       disabled={adminBusy || submittingAuthorReview}
                       numberOfLines={1}
                       adjustsFontSizeToFit
-                      style={styles.flexOne}
+                      style={[styles.flexOne, styles.moderationBtn]}
                     />
                     <SecondaryButton
                       compact
-                      label="Recusar / Manter em Aberto"
+                      label="Recusar"
                       icon="rotate-left"
                       onPress={() => handleAdminDirectModeration(false)}
                       loading={adminBusy}
                       disabled={adminBusy || submittingAuthorReview}
                       numberOfLines={1}
                       adjustsFontSizeToFit
-                      style={styles.flexOne}
+                      style={[styles.flexOne, styles.moderationBtn]}
                     />
                   </View>
                   <DangerButton
@@ -1878,6 +1878,10 @@ const styles = StyleSheet.create({
   },
   flexOne: {
     flex: 1,
+  },
+  moderationBtn: {
+    paddingHorizontal: 14,
+    overflow: 'hidden',
   },
   dragZone: {
     paddingTop: 10,
