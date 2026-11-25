@@ -29,10 +29,10 @@ const ONBOARDING_SLIDES = [
   {
     id: 'slide-safety',
     icon: 'camera',
-    badge: '2 de 3 • Segurança e Captura Android',
-    title: 'Fotografe apenas o buraco pelo app Android',
+    badge: '2 de 3 • Segurança e Captura no Celular',
+    title: 'Fotografe apenas o buraco pelo celular',
     description:
-      'Nunca tire fotos enquanto dirige — estacione em local seguro antes de registrar. Os registros com foto são exclusivos pelo aplicativo Android no local e passam por revisão onde você pode cobrir placas ou números antes de enviar.',
+      'Nunca tire fotos enquanto dirige — estacione em local seguro antes de registrar. Os relatos funcionam pela câmera traseira no aplicativo Android ou no navegador do celular (bloqueado em computadores) e passam por revisão antes do envio.',
     tip: 'Proibido fotografar rostos, crianças, selfies, placas de veículos, números de casas ou conteúdo impróprio.',
   },
   {

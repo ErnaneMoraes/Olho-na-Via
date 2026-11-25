@@ -24,6 +24,7 @@ import { useAppSettings } from '../context/AppSettingsContext';
 import { recordAppErrorLog } from '../services/diagnosticLogService';
 import { verifyCapturedPhotoSafety } from '../services/photoSafetyService';
 import { deleteTempPhoto } from '../services/potholeMediaService';
+import { canCapturePotholePhotos } from '../utils/devicePlatform';
 import { PhotoReviewModal } from './PhotoReviewModal';
 
 export function PotholeCameraModal({
@@ -49,6 +50,7 @@ export function PotholeCameraModal({
   const [errorMsg, setErrorMsg] = useState('');
 
   const isWeb = Platform.OS === 'web';
+  const isDesktopBlocked = !canCapturePotholePhotos();
   const topSafeOffset =
     Math.max(insets.top, Platform.OS === 'android' ? StatusBar.currentHeight || 24 : 12) + 8;
 
@@ -64,10 +66,10 @@ export function PotholeCameraModal({
       return;
     }
 
-    if (!isWeb && permission && !permission.granted && permission.canAskAgain) {
+    if (!isDesktopBlocked && permission && !permission.granted && permission.canAskAgain) {
       requestPermission().catch(() => {});
     }
-  }, [visible, isWeb, permission, requestPermission]);
+  }, [visible, isDesktopBlocked, permission, requestPermission]);
 
   const handleCancel = async () => {
     if (isCapturing || checkingSafety) return;
@@ -83,13 +85,13 @@ export function PotholeCameraModal({
   };
 
   const handleCapture = async () => {
-    if (isWeb || !cameraRef.current || isCapturing || checkingSafety) return;
+    if (isDesktopBlocked || !cameraRef.current || isCapturing || checkingSafety) return;
     setErrorMsg('');
     setIsCapturing(true);
     try {
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.85,
-        shutterSound: Boolean(settings?.cameraShutterSound),
+        ...(isWeb ? {} : { shutterSound: Boolean(settings?.cameraShutterSound) }),
       });
       if (!photo?.uri) {
         setErrorMsg('Não foi possível capturar a foto. Tente novamente.');
@@ -129,7 +131,7 @@ export function PotholeCameraModal({
     setErrorMsg('');
   };
 
-  const renderWebBlockedState = () => (
+  const renderDesktopBlockedState = () => (
     <View
       style={[
         styles.gateRoot,
@@ -157,13 +159,12 @@ export function PotholeCameraModal({
           <FontAwesome6 name="mobile-screen-button" size={26} color={colors.primary} />
         </View>
         <Text style={[styles.gateTitle, { color: colors.text }]}>
-          Registro exclusivo pelo aplicativo Android
+          Registro exclusivo pelo celular
         </Text>
         <Text style={[styles.gateBody, { color: colors.textSecondary }]}>
-          Para garantir registros reais no local, o envio de fotos e novos buracos só pode ser
-          feito diretamente pela câmera do aplicativo Android Olho na Via — nunca por webcam ou
-          arquivos do computador. O link oficial para baixar o aplicativo Android será
-          disponibilizado em breve.
+          Relatos e fotos de buracos não podem ser enviados a partir de um computador ou notebook.
+          Para registrar com a câmera traseira no local, acesse o Olho na Via pelo navegador do seu
+          smartphone. O link oficial para baixar o aplicativo Android será disponibilizado em breve.
         </Text>
         <View style={styles.gateActions}>
           <PrimaryButton label="Entendi" icon="check" onPress={handleCancel} />
@@ -331,9 +332,9 @@ export function PotholeCameraModal({
       <CameraView
         ref={cameraRef}
         style={StyleSheet.absoluteFill}
-        facing={facing}
-        flash={flashEnabled ? 'on' : 'off'}
-        enableTorch={isCameraReady && flashEnabled && facing === 'back'}
+        facing="back"
+        flash={isWeb ? 'off' : flashEnabled ? 'on' : 'off'}
+        enableTorch={!isWeb && isCameraReady && flashEnabled && facing === 'back'}
         onCameraReady={() => setIsCameraReady(true)}
       />
 
@@ -383,7 +384,7 @@ export function PotholeCameraModal({
               </Text>
             </View>
 
-            {facing === 'back' ? (
+            {!isWeb && facing === 'back' ? (
               <Pressable
                 onPress={() => setFlashEnabled((v) => !v)}
                 accessibilityLabel="Alternar flash"
@@ -487,8 +488,8 @@ export function PotholeCameraModal({
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={handleCancel}>
-      {isWeb ? (
-        renderWebBlockedState()
+      {isDesktopBlocked ? (
+        renderDesktopBlockedState()
       ) : capturedPhoto ? (
         <PhotoReviewModal
           inline

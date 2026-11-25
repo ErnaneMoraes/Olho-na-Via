@@ -2,6 +2,7 @@ import * as Crypto from 'expo-crypto';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { Platform } from 'react-native';
+import { canCapturePotholePhotos, isMobileWebBrowser } from '../utils/devicePlatform';
 import { recordDiagnosticEvent } from './diagnosticLogService';
 import { isSupabaseConfigured, supabase } from './supabaseClient';
 
@@ -197,13 +198,94 @@ async function persistBase64OrMove(base64Data, sourceUri, destinationUri) {
   return destinationUri;
 }
 
+function loadBrowserImage(uri) {
+  return new Promise((resolve, reject) => {
+    const img = new window.Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Não foi possível carregar a foto capturada.'));
+    img.src = uri;
+  });
+}
+
+async function processPotholePhotoMobileWeb(rawUri, { redactionBars = [] } = {}) {
+  if (!isMobileWebBrowser()) {
+    throw new Error(
+      'Registro exclusivo pelo celular. Abra o Olho na Via no navegador do seu smartphone ou no aplicativo Android.'
+    );
+  }
+
+  const baseId = `pothole_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  try {
+    const img = await loadBrowserImage(rawUri);
+    const srcW = img.naturalWidth || img.width || 1080;
+    const srcH = img.naturalHeight || img.height || 720;
+    const targetW = srcW > 1080 ? 1080 : srcW;
+    const targetH = Math.max(1, Math.round((srcH * targetW) / Math.max(1, srcW)));
+
+    const fullCanvas = document.createElement('canvas');
+    fullCanvas.width = targetW;
+    fullCanvas.height = targetH;
+    const fCtx = fullCanvas.getContext('2d');
+    fCtx.drawImage(img, 0, 0, targetW, targetH);
+
+    if (Array.isArray(redactionBars) && redactionBars.length > 0) {
+      fCtx.fillStyle = '#111827';
+      for (const bar of redactionBars) {
+        fCtx.fillRect(
+          Math.round(bar.x * targetW),
+          Math.round(bar.y * targetH),
+          Math.max(4, Math.round(bar.width * targetW)),
+          Math.max(4, Math.round(bar.height * targetH))
+        );
+      }
+    }
+
+    const fullUri = fullCanvas.toDataURL('image/jpeg', 0.85);
+    const fullBase64 = stripDataUriPrefix(fullUri);
+
+    const thumbW = Math.min(200, targetW);
+    const thumbH = Math.max(1, Math.round((targetH * thumbW) / Math.max(1, targetW)));
+    const thumbCanvas = document.createElement('canvas');
+    thumbCanvas.width = thumbW;
+    thumbCanvas.height = thumbH;
+    const tCtx = thumbCanvas.getContext('2d');
+    tCtx.drawImage(fullCanvas, 0, 0, thumbW, thumbH);
+    const thumbUri = thumbCanvas.toDataURL('image/jpeg', 0.6);
+    const thumbBase64 = stripDataUriPrefix(thumbUri);
+
+    const thumbBytes = estimateDataUriBytes(thumbUri);
+    const fullBytes = estimateDataUriBytes(fullUri);
+
+    await recordDiagnosticEvent('MIDIA', 'Foto capturada no Mobile Web processada em Canvas', {
+      thumbBytes,
+      fullBytes,
+      redactionsCount: Array.isArray(redactionBars) ? redactionBars.length : 0,
+    });
+
+    return {
+      id: baseId,
+      thumbUri,
+      fullUri,
+      thumbBase64,
+      fullBase64,
+      thumbBytes,
+      fullBytes,
+    };
+  } finally {
+    await deleteTempPhoto(rawUri);
+  }
+}
+
 export async function saveProcessedPotholePhotoFromBase64({
   thumbBase64,
   fullBase64,
   rawUriToClean = null,
 }) {
-  if (Platform.OS === 'web') {
-    throw new Error('O envio de fotos e relatos é exclusivo do aplicativo Android Olho na Via.');
+  if (!canCapturePotholePhotos()) {
+    throw new Error(
+      'Registro exclusivo pelo celular. Abra o Olho na Via no navegador do seu smartphone ou no aplicativo Android.'
+    );
   }
 
   const cleanThumbB64 = stripDataUriPrefix(thumbBase64);
@@ -212,9 +294,27 @@ export async function saveProcessedPotholePhotoFromBase64({
     throw new Error('Dados da foto revisada estão incompletos.');
   }
 
+  const baseId = `pothole_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const thumbBytes = Math.floor((cleanThumbB64.length * 3) / 4);
+  const fullBytes = Math.floor((cleanFullB64.length * 3) / 4);
+
+  if (Platform.OS === 'web') {
+    if (rawUriToClean) {
+      await deleteTempPhoto(rawUriToClean);
+    }
+    return {
+      id: baseId,
+      thumbUri: `data:image/jpeg;base64,${cleanThumbB64}`,
+      fullUri: `data:image/jpeg;base64,${cleanFullB64}`,
+      thumbBase64: cleanThumbB64,
+      fullBase64: cleanFullB64,
+      thumbBytes,
+      fullBytes,
+    };
+  }
+
   await ensurePotholePhotosDir();
 
-  const baseId = `pothole_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const thumbDest = `${POTHOLE_PHOTOS_DIR}${baseId}_thumb.jpg`;
   const fullDest = `${POTHOLE_PHOTOS_DIR}${baseId}_full.jpg`;
 
@@ -237,9 +337,6 @@ export async function saveProcessedPotholePhotoFromBase64({
     await deleteTempPhoto(rawUriToClean);
   }
 
-  const thumbBytes = Math.floor((cleanThumbB64.length * 3) / 4);
-  const fullBytes = Math.floor((cleanFullB64.length * 3) / 4);
-
   await recordDiagnosticEvent('MIDIA', 'Foto revisada e otimizada com base64 em memória', {
     thumbBytes,
     fullBytes,
@@ -257,11 +354,17 @@ export async function saveProcessedPotholePhotoFromBase64({
 }
 
 export async function processPotholePhoto(rawUri, options = {}) {
-  if (Platform.OS === 'web') {
-    throw new Error('O envio de fotos e relatos é exclusivo do aplicativo Android Olho na Via.');
+  if (!canCapturePotholePhotos()) {
+    throw new Error(
+      'Registro exclusivo pelo celular. Abra o Olho na Via no navegador do seu smartphone ou no aplicativo Android.'
+    );
   }
   if (!rawUri || typeof rawUri !== 'string') {
     throw new Error('Nenhuma imagem foi capturada para processamento.');
+  }
+
+  if (Platform.OS === 'web') {
+    return processPotholePhotoMobileWeb(rawUri, options);
   }
 
   await ensurePotholePhotosDir();
@@ -338,8 +441,10 @@ export async function processPotholePhoto(rawUri, options = {}) {
  */
 export const LocalPotholeMediaAdapter = {
   async uploadPhotoPair({ thumbUri, fullUri, isDemoSession = false }) {
-    if (Platform.OS === 'web') {
-      throw new Error('O envio de fotos e relatos é exclusivo do aplicativo Android Olho na Via.');
+    if (!canCapturePotholePhotos()) {
+      throw new Error(
+        'Registro exclusivo pelo celular. Abra o Olho na Via no navegador do seu smartphone ou no aplicativo Android.'
+      );
     }
     if (isDemoSession) {
       throw new Error('Modo Demonstração é somente leitura. Crie uma conta para enviar fotos.');
@@ -373,8 +478,10 @@ export const SupabasePotholeMediaAdapter = {
     fullBase64 = null,
     isDemoSession = false,
   }) {
-    if (Platform.OS === 'web') {
-      throw new Error('O envio de fotos e relatos é exclusivo do aplicativo Android Olho na Via.');
+    if (!canCapturePotholePhotos()) {
+      throw new Error(
+        'Registro exclusivo pelo celular. Abra o Olho na Via no navegador do seu smartphone ou no aplicativo Android.'
+      );
     }
     if (isDemoSession) {
       throw new Error('Modo Demonstração é somente leitura. Crie uma conta para enviar fotos.');
@@ -392,12 +499,21 @@ export const SupabasePotholeMediaAdapter = {
       fullBase64 ? Promise.resolve(base64ToArrayBuffer(fullBase64)) : uriToArrayBuffer(fullUri),
     ]);
 
+    const thumbUploadBody =
+      Platform.OS === 'web' && typeof Blob !== 'undefined'
+        ? new Blob([thumbBuffer], { type: 'image/jpeg' })
+        : thumbBuffer;
+    const fullUploadBody =
+      Platform.OS === 'web' && typeof Blob !== 'undefined'
+        ? new Blob([fullBuffer], { type: 'image/jpeg' })
+        : fullBuffer;
+
     const [thumbUpload, fullUpload] = await Promise.all([
-      supabase.storage.from(SUPABASE_BUCKET).upload(thumbStoragePath, thumbBuffer, {
+      supabase.storage.from(SUPABASE_BUCKET).upload(thumbStoragePath, thumbUploadBody, {
         contentType: 'image/jpeg',
         upsert: false,
       }),
-      supabase.storage.from(SUPABASE_BUCKET).upload(fullStoragePath, fullBuffer, {
+      supabase.storage.from(SUPABASE_BUCKET).upload(fullStoragePath, fullUploadBody, {
         contentType: 'image/jpeg',
         upsert: false,
       }),

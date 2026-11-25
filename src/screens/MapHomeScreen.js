@@ -28,6 +28,7 @@ import { deletePotholePhotos } from '../services/potholeMediaService';
 import { potholeRepository } from '../services/potholeRepository';
 import { generateSeedPotholes } from '../services/potholeSeedService';
 import { isSupabaseConfigured } from '../services/supabaseClient';
+import { canCapturePotholePhotos } from '../utils/devicePlatform';
 
 const GPS_TIMEOUT_MS = 10000;
 const REGION_DEBOUNCE_MS = 500;
@@ -443,7 +444,7 @@ export function MapHomeScreen({
 
   const handleOpenReportCamera = useCallback(() => {
     if (isDemoRef.current) return;
-    if (Platform.OS === 'web') {
+    if (!canCapturePotholePhotos()) {
       setDetailModalVisible(false);
       setWebOnlyModalVisible(true);
       return;
@@ -456,7 +457,7 @@ export function MapHomeScreen({
 
   const handleStartVerification = useCallback((pothole, nextStatus) => {
     if (isDemoRef.current) return;
-    if (Platform.OS === 'web') {
+    if (!canCapturePotholePhotos()) {
       setDetailModalVisible(false);
       setWebOnlyModalVisible(true);
       return;
@@ -1064,12 +1065,12 @@ export function MapHomeScreen({
               <FontAwesome6 name="mobile-screen-button" size={24} color={colors.primary} />
             </View>
             <Text style={[styles.webNoticeTitle, { color: colors.text }]}>
-              Registro exclusivo pelo aplicativo Android
+              Registro exclusivo pelo celular
             </Text>
             <Text style={[styles.webNoticeBody, { color: colors.textSecondary }]}>
-              Para garantir relatos autênticos feitos no local, não é possível enviar fotos pela
-              webcam ou por arquivos no navegador. Utilize o aplicativo Android Olho na Via para
-              fotografar buracos e confirmar reparos na via.
+              Relatos e fotos de buracos não podem ser enviados a partir de um computador ou
+              notebook. Para registrar com a câmera traseira no local, acesse o Olho na Via pelo
+              navegador do seu smartphone.
             </Text>
             <Text style={[styles.webNoticeHighlight, { color: colors.primary }]}>
               O link oficial para baixar o aplicativo Android será disponibilizado em breve.

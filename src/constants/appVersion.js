@@ -1,8 +1,18 @@
 export const APP_NAME = 'Olho na Via';
-export const APP_VERSION = '1.6.3';
-export const APP_BUILD_TAG = '2026.11.25-mobile-web-native-feel';
+export const APP_VERSION = '1.6.5';
+export const APP_BUILD_TAG = '2026.11.25-mobile-web-camera-capture';
 
 export const APP_CHANGELOG = [
+  {
+    version: '1.6.5',
+    date: '25/11/2026',
+    title: 'Captura pela Câmera Traseira no Mobile Web (Bloqueio em Desktop)',
+    highlights: [
+      'Criado detector estrito de navegador móvel (UA móvel + hardware touch) em devicePlatform.js mantendo computadores bloqueados para envio de fotos.',
+      'Habilitada captura ao vivo pela câmera traseira (facing="back" travado) em navegadores de smartphones com o mesmo termo pré-captura e tela de revisão com tarja por toque.',
+      'Processamento e upload em Blob/Base64 via HTML5 Canvas no Mobile Web compatível com Chrome Android e Safari iOS.',
+    ],
+  },
   {
     version: '1.6.3',
     date: '25/11/2026',

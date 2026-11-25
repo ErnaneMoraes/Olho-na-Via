@@ -670,8 +670,9 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
                   ]}
                 >
                   <Text style={[styles.helperText, { color: colors.textSecondary }]}>
-                    • Registros e confirmações com foto são exclusivos pelo aplicativo Android, no
-                    local, e apenas com o veículo parado em segurança.{'\n'}
+                    • Registros e confirmações funcionam ao vivo pela câmera traseira no aplicativo
+                    Android ou no navegador do celular (bloqueado em computadores), apenas com o
+                    veículo parado em segurança.{'\n'}
                     • É proibido enviar imagens com rostos, crianças, selfies, placas de veículos,
                     números de casas ou conteúdo impróprio.{'\n'}
                     • Antes do envio, você revisa a foto e pode desenhar tarjas escuras com o dedo

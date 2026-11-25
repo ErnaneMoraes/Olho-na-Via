@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
+import { canCapturePotholePhotos } from '../utils/devicePlatform';
 import { recordDiagnosticEvent } from './diagnosticLogService';
 import {
   cacheRemoteThumbnail,
@@ -27,9 +27,9 @@ function assertNotDemoSession(isDemoSession) {
 }
 
 function assertMobilePlatform() {
-  if (Platform.OS === 'web') {
+  if (!canCapturePotholePhotos()) {
     throw createRepositoryError(
-      'O registro de buracos e envio de fotos são exclusivos do aplicativo Android Olho na Via.'
+      'Registro exclusivo pelo celular. Abra o Olho na Via no navegador do seu smartphone ou no aplicativo Android.'
     );
   }
 }

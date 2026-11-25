@@ -121,8 +121,32 @@ export function PhotoReviewModal({
   const [redactionTask, setRedactionTask] = useState(null);
 
   const frameSizeRef = useRef({ width: 0, height: 0 });
+  const touchAreaRef = useRef(null);
   const dragOriginRef = useRef(null);
   const processingRef = useRef(false);
+
+  const getTouchCoords = (evt) => {
+    const ne = evt?.nativeEvent || {};
+    if (
+      Platform.OS === 'web' &&
+      touchAreaRef.current &&
+      typeof touchAreaRef.current.getBoundingClientRect === 'function' &&
+      Number.isFinite(ne.pageX) &&
+      Number.isFinite(ne.pageY)
+    ) {
+      const rect = touchAreaRef.current.getBoundingClientRect();
+      const scrollX = typeof window !== 'undefined' ? window.scrollX || 0 : 0;
+      const scrollY = typeof window !== 'undefined' ? window.scrollY || 0 : 0;
+      return {
+        x: ne.pageX - scrollX - rect.left,
+        y: ne.pageY - scrollY - rect.top,
+      };
+    }
+    return {
+      x: Number.isFinite(ne.locationX) ? ne.locationX : 0,
+      y: Number.isFinite(ne.locationY) ? ne.locationY : 0,
+    };
+  };
 
   useEffect(() => {
     processingRef.current = processing;
@@ -171,30 +195,25 @@ export function PhotoReviewModal({
         onStartShouldSetPanResponder: () => !processingRef.current,
         onMoveShouldSetPanResponder: () => !processingRef.current,
         onPanResponderGrant: (evt) => {
-          const { locationX, locationY } = evt.nativeEvent;
-          dragOriginRef.current = { x: locationX, y: locationY };
-          setActiveDraftBar(toNormalizedRect(locationX, locationY, locationX + 8, locationY + 8));
+          const { x: lx, y: ly } = getTouchCoords(evt);
+          dragOriginRef.current = { x: lx, y: ly };
+          setActiveDraftBar(toNormalizedRect(lx, ly, lx + 8, ly + 8));
         },
         onPanResponderMove: (evt) => {
           if (!dragOriginRef.current) return;
-          const { locationX, locationY } = evt.nativeEvent;
+          const { x: lx, y: ly } = getTouchCoords(evt);
           setActiveDraftBar(
-            toNormalizedRect(
-              dragOriginRef.current.x,
-              dragOriginRef.current.y,
-              locationX,
-              locationY
-            )
+            toNormalizedRect(dragOriginRef.current.x, dragOriginRef.current.y, lx, ly)
           );
         },
         onPanResponderRelease: (evt) => {
           if (!dragOriginRef.current) return;
-          const { locationX, locationY } = evt.nativeEvent;
+          const { x: lx, y: ly } = getTouchCoords(evt);
           const finalRect = toNormalizedRect(
             dragOriginRef.current.x,
             dragOriginRef.current.y,
-            locationX,
-            locationY
+            lx,
+            ly
           );
           dragOriginRef.current = null;
           setActiveDraftBar(null);
@@ -216,16 +235,17 @@ export function PhotoReviewModal({
     setProcessing(true);
 
     try {
-      if (redactionBars.length === 0 || !NativeWebView) {
+      if (Platform.OS === 'web' || redactionBars.length === 0 || !NativeWebView) {
         const processed = await processPotholePhoto(photo.uri, {
           width: photo.width,
           height: photo.height,
+          redactionBars,
         });
         setProcessing(false);
         onPhotoApproved?.({
           ...processed,
           privacyConfirmed: true,
-          redactionsCount: 0,
+          redactionsCount: redactionBars.length,
         });
         return;
       }
@@ -347,11 +367,16 @@ export function PhotoReviewModal({
           ]}
         >
           <View
+            ref={touchAreaRef}
             onLayout={(e) => {
               const { width: fw, height: fh } = e.nativeEvent.layout;
               frameSizeRef.current = { width: fw, height: fh };
             }}
-            style={[styles.canvasTouchArea, { aspectRatio: photoAspectRatio }]}
+            style={[
+              styles.canvasTouchArea,
+              { aspectRatio: photoAspectRatio },
+              Platform.OS === 'web' ? { touchAction: 'none', userSelect: 'none' } : null,
+            ]}
             {...panResponder.panHandlers}
           >
             {photo?.uri ? (
