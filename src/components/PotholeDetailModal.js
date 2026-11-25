@@ -372,6 +372,8 @@ export function PotholeDetailModal({
         isDemoSession: Boolean(session?.isDemo),
         thumbUri: pendingVerificationDraft.media.thumbUri,
         fullUri: pendingVerificationDraft.media.fullUri,
+        thumbBase64: pendingVerificationDraft.media.thumbBase64,
+        fullBase64: pendingVerificationDraft.media.fullBase64,
         currentPothole: pothole,
       });
       notifyDataRestored();

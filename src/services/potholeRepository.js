@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import { recordDiagnosticEvent } from './diagnosticLogService';
 import {
   cacheRemoteThumbnail,
@@ -21,6 +22,14 @@ function assertNotDemoSession(isDemoSession) {
   if (isDemoSession) {
     throw createRepositoryError(
       'Modo Demonstração é somente leitura. Crie uma conta gratuita ou faça login para registrar ou atualizar ocorrências.'
+    );
+  }
+}
+
+function assertMobilePlatform() {
+  if (Platform.OS === 'web') {
+    throw createRepositoryError(
+      'O registro de buracos e envio de fotos são exclusivos do aplicativo Android Olho na Via.'
     );
   }
 }
@@ -136,6 +145,7 @@ export const LocalAsyncStoragePotholeAdapter = {
     isDemoSession = false,
   }) {
     assertNotDemoSession(isDemoSession);
+    assertMobilePlatform();
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
       throw createRepositoryError('Coordenadas GPS inválidas para registrar o relato.');
     }
@@ -203,6 +213,7 @@ export const LocalAsyncStoragePotholeAdapter = {
     }
   ) {
     assertNotDemoSession(isDemoSession);
+    assertMobilePlatform();
     if (nextStatus !== 'open' && nextStatus !== 'fixed') {
       throw createRepositoryError('Status de verificação inválido.');
     }
@@ -408,6 +419,7 @@ export const SupabasePotholeAdapter = {
 
   async createReport(payload) {
     assertNotDemoSession(payload?.isDemoSession);
+    assertMobilePlatform();
     if (!isSupabaseConfigured()) {
       return LocalAsyncStoragePotholeAdapter.createReport(payload);
     }
@@ -419,9 +431,10 @@ export const SupabasePotholeAdapter = {
       comment,
       isAnonymous,
       authorNickname,
-      authorUserId,
       thumbUri,
       fullUri,
+      thumbBase64,
+      fullBase64,
     } = payload;
 
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
@@ -433,29 +446,33 @@ export const SupabasePotholeAdapter = {
       throw createRepositoryError('Descreva o problema com pelo menos 5 caracteres.');
     }
 
-    if (!thumbUri || !fullUri) {
+    if (!thumbUri && !thumbBase64) {
       throw createRepositoryError('A foto do buraco é obrigatória para publicar o relato.');
+    }
+
+    const { data: authData, error: authErr } = await supabase.auth.getUser();
+    const activeUserId = authData?.user?.id || null;
+    if (authErr || !activeUserId) {
+      throw createRepositoryError(
+        'Sessão expirada ou conta não autenticada. Entre novamente para publicar.'
+      );
     }
 
     const anonymousFlag = Boolean(isAnonymous);
     const cleanStreet = String(streetAddress || '').trim() || 'Via localizada por GPS';
     const cleanNickname = String(authorNickname || 'Cidadão').trim();
 
-    let resolvedUserId = authorUserId || null;
-    if (!resolvedUserId && supabase) {
-      try {
-        const { data: userData } = await supabase.auth.getUser();
-        resolvedUserId = userData?.user?.id || null;
-      } catch {
-        // Segue sem alterar sessão caso leitura falhe pontualmente
-      }
-    }
+    const uploaded = await potholeMediaStorage.uploadPhotoPair({
+      thumbUri,
+      fullUri,
+      thumbBase64,
+      fullBase64,
+      isDemoSession: Boolean(payload?.isDemoSession),
+    });
 
-    const uploaded = await potholeMediaStorage.uploadPhotoPair({ thumbUri, fullUri });
-
-    // Exibe "Usuário Anônimo" ao público preservando user_id interno para moderação administrativa
+    // Exibe "Usuário Anônimo" ao público preservando user_id ativo (auth.uid()) para RLS e moderação
     const insertPayload = {
-      user_id: resolvedUserId,
+      user_id: activeUserId,
       author_nickname: anonymousFlag ? 'Usuário Anônimo' : cleanNickname,
       is_anonymous: anonymousFlag,
       latitude,
@@ -492,6 +509,7 @@ export const SupabasePotholeAdapter = {
 
   async addVerification(potholeId, payload) {
     assertNotDemoSession(payload?.isDemoSession);
+    assertMobilePlatform();
     const idStr = String(potholeId || '');
     if (
       !isSupabaseConfigured() ||
@@ -506,39 +524,44 @@ export const SupabasePotholeAdapter = {
       note,
       isAnonymous,
       authorNickname,
-      authorUserId,
       thumbUri,
       fullUri,
+      thumbBase64,
+      fullBase64,
       currentPothole,
     } = payload;
 
     if (nextStatus !== 'open' && nextStatus !== 'fixed') {
       throw createRepositoryError('Status de verificação inválido.');
     }
-    if (!thumbUri || !fullUri) {
+    if ((!thumbUri && !thumbBase64) || (!fullUri && !fullBase64)) {
       throw createRepositoryError('Uma foto atualizada é obrigatória para verificar a via.');
+    }
+
+    const { data: authData, error: authErr } = await supabase.auth.getUser();
+    const activeUserId = authData?.user?.id || null;
+    if (authErr || !activeUserId) {
+      throw createRepositoryError(
+        'Sessão expirada ou conta não autenticada. Entre novamente para verificar.'
+      );
     }
 
     const anonymousFlag = Boolean(isAnonymous);
     const cleanNote = String(note || '').trim();
     const cleanNickname = String(authorNickname || 'Cidadão').trim();
 
-    let resolvedUserId = authorUserId || null;
-    if (!resolvedUserId && supabase) {
-      try {
-        const { data: userData } = await supabase.auth.getUser();
-        resolvedUserId = userData?.user?.id || null;
-      } catch {
-        // Segue sem alterar sessão caso leitura falhe pontualmente
-      }
-    }
+    const uploaded = await potholeMediaStorage.uploadPhotoPair({
+      thumbUri,
+      fullUri,
+      thumbBase64,
+      fullBase64,
+      isDemoSession: Boolean(payload?.isDemoSession),
+    });
 
-    const uploaded = await potholeMediaStorage.uploadPhotoPair({ thumbUri, fullUri });
-
-    // Exibe "Usuário Anônimo" ao público preservando user_id interno em pothole_updates
+    // Exibe "Usuário Anônimo" ao público preservando user_id ativo (auth.uid()) para RLS e moderação
     const updateInsertPayload = {
       pothole_id: potholeId,
-      user_id: resolvedUserId,
+      user_id: activeUserId,
       author_nickname: anonymousFlag ? 'Usuário Anônimo' : cleanNickname,
       is_anonymous: anonymousFlag,
       status: nextStatus,

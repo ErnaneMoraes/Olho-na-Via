@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   AppState,
   Linking,
+  Modal,
   Platform,
   Pressable,
   StatusBar,
@@ -128,6 +129,7 @@ export function MapHomeScreen({
 
   const [cameraModalVisible, setCameraModalVisible] = useState(false);
   const [cameraContext, setCameraContext] = useState({ mode: 'new_report' });
+  const [webOnlyModalVisible, setWebOnlyModalVisible] = useState(false);
 
   const [newReportModalVisible, setNewReportModalVisible] = useState(false);
   const [draftMedia, setDraftMedia] = useState(null);
@@ -440,7 +442,13 @@ export function MapHomeScreen({
   );
 
   const handleOpenReportCamera = useCallback(() => {
-    if (isDemoRef.current || !userCoordsRef.current) return;
+    if (isDemoRef.current) return;
+    if (Platform.OS === 'web') {
+      setDetailModalVisible(false);
+      setWebOnlyModalVisible(true);
+      return;
+    }
+    if (!userCoordsRef.current) return;
     setDetailModalVisible(false);
     setCameraContext({ mode: 'new_report' });
     setCameraModalVisible(true);
@@ -448,6 +456,11 @@ export function MapHomeScreen({
 
   const handleStartVerification = useCallback((pothole, nextStatus) => {
     if (isDemoRef.current) return;
+    if (Platform.OS === 'web') {
+      setDetailModalVisible(false);
+      setWebOnlyModalVisible(true);
+      return;
+    }
     setDetailModalVisible(false);
     setCameraContext({
       mode: 'verification',
@@ -1026,6 +1039,49 @@ export function MapHomeScreen({
         onAdminPotholeDeleted={handleAdminPotholeDeleted}
         onAdminUpdateDeleted={handleAdminUpdateDeleted}
       />
+
+      <Modal
+        visible={webOnlyModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setWebOnlyModalVisible(false)}
+      >
+        <View style={[styles.webNoticeOverlay, { backgroundColor: colors.overlay }]}>
+          <View
+            style={[
+              SharedStyles.contentContainer,
+              styles.webNoticeCard,
+              cardShadow,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                borderWidth,
+                borderRadius: radiusCard,
+              },
+            ]}
+          >
+            <View style={[styles.webNoticeIcon, { backgroundColor: colors.accentSoft }]}>
+              <FontAwesome6 name="mobile-screen-button" size={24} color={colors.primary} />
+            </View>
+            <Text style={[styles.webNoticeTitle, { color: colors.text }]}>
+              Registro exclusivo pelo aplicativo Android
+            </Text>
+            <Text style={[styles.webNoticeBody, { color: colors.textSecondary }]}>
+              Para garantir relatos autênticos feitos no local, não é possível enviar fotos pela
+              webcam ou por arquivos no navegador. Utilize o aplicativo Android Olho na Via para
+              fotografar buracos e confirmar reparos na via.
+            </Text>
+            <Text style={[styles.webNoticeHighlight, { color: colors.primary }]}>
+              O link oficial para baixar o aplicativo Android será disponibilizado em breve.
+            </Text>
+            <PrimaryButton
+              label="Entendi"
+              icon="check"
+              onPress={() => setWebOnlyModalVisible(false)}
+            />
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1179,6 +1235,40 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
     fontWeight: '600',
+  },
+  webNoticeOverlay: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  webNoticeCard: {
+    padding: 22,
+    alignItems: 'center',
+    gap: 12,
+  },
+  webNoticeIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  webNoticeTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  webNoticeBody: {
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: 'center',
+  },
+  webNoticeHighlight: {
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '700',
+    textAlign: 'center',
   },
 });
 

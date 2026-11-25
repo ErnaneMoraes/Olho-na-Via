@@ -1,8 +1,19 @@
 export const APP_NAME = 'Olho na Via';
-export const APP_VERSION = '1.5.3';
-export const APP_BUILD_TAG = '2026.11.25-admin-author-audit-clean-settings';
+export const APP_VERSION = '1.6.0';
+export const APP_BUILD_TAG = '2026.11.25-fix-upload-rls-photo-verification';
 
 export const APP_CHANGELOG = [
+  {
+    version: '1.6.0',
+    date: '25/11/2026',
+    title: 'Correção ENOENT/RLS, Revisão com Tarja e Captura Exclusiva Android',
+    highlights: [
+      'Corrigido erro ENOENT ao salvar e enviar fotos garantindo criação recursiva do diretório e uso direto de base64 em memória na geração e upload.',
+      'Garantido vínculo user_id = auth.uid() nas inserções de buracos e verificações mesmo em postagens anônimas, resolvendo violação RLS.',
+      'Bloqueado envio de fotos por webcam ou arquivo no navegador Web, exibindo aviso exclusivo para o aplicativo Android.',
+      'Adicionado termo de responsabilidade pré-captura, detecção automática de rostos no dispositivo e tela de revisão com tarjas por toque e confirmação obrigatória.',
+    ],
+  },
   {
     version: '1.5.3',
     date: '25/11/2026',

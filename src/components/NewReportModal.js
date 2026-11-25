@@ -50,6 +50,7 @@ export function NewReportModal({
   const [streetAddress, setStreetAddress] = useState('');
   const [comment, setComment] = useState('');
   const [isAnonymous, setIsAnonymous] = useState(Boolean(initialAnonymous));
+  const [privacyConfirmed, setPrivacyConfirmed] = useState(Boolean(capturedMedia?.privacyConfirmed));
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -63,6 +64,7 @@ export function NewReportModal({
     setComment('');
     setErrorMsg('');
     setIsAnonymous(Boolean(initialAnonymous));
+    setPrivacyConfirmed(Boolean(capturedMedia?.privacyConfirmed));
     setCoords(fallbackCoords || null);
     setStreetAddress('');
 
@@ -143,6 +145,11 @@ export function NewReportModal({
       return;
     }
 
+    if (!privacyConfirmed) {
+      setErrorMsg('Confirme que a foto respeita as diretrizes de privacidade antes de publicar.');
+      return;
+    }
+
     setSaving(true);
     try {
       const created = await potholeRepository.createReport({
@@ -156,6 +163,8 @@ export function NewReportModal({
         isDemoSession: Boolean(session?.isDemo),
         thumbUri: capturedMedia?.thumbUri,
         fullUri: capturedMedia?.fullUri,
+        thumbBase64: capturedMedia?.thumbBase64,
+        fullBase64: capturedMedia?.fullBase64,
       });
 
       notifyDataRestored();
@@ -357,6 +366,30 @@ export function NewReportModal({
             </View>
           </View>
 
+          {/* Confirmação obrigatória de privacidade da imagem */}
+          <Pressable
+            onPress={() => setPrivacyConfirmed((v) => !v)}
+            style={[
+              styles.privacyCheckCard,
+              {
+                backgroundColor: privacyConfirmed ? colors.successSoft : colors.surfaceMuted,
+                borderColor: privacyConfirmed ? colors.success : colors.border,
+                borderWidth: 1,
+                borderRadius: radiusInput,
+              },
+            ]}
+          >
+            <FontAwesome6
+              name={privacyConfirmed ? 'square-check' : 'square'}
+              size={18}
+              color={privacyConfirmed ? colors.success : colors.textSecondary}
+            />
+            <Text style={[styles.privacyCheckText, { color: colors.text }]}>
+              Confirmo que a foto mostra apenas o buraco e não contém rostos, crianças, placas de
+              veículos, números de casas ou conteúdo impróprio.
+            </Text>
+          </Pressable>
+
           {errorMsg ? (
             <View
               style={[
@@ -386,6 +419,7 @@ export function NewReportModal({
               icon="check"
               onPress={handlePublish}
               loading={saving}
+              disabled={!privacyConfirmed || saving}
               style={styles.footerBtn}
             />
           </View>
@@ -452,6 +486,18 @@ const styles = StyleSheet.create({
   badgeText: {
     fontSize: 12,
     fontWeight: '700',
+  },
+  privacyCheckCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 12,
+    gap: 10,
+  },
+  privacyCheckText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '600',
   },
   sectionCard: {
     padding: 14,

@@ -78,11 +78,21 @@ function hashUrlForFilename(url) {
   return `thumb_${(hash >>> 0).toString(16)}.jpg`;
 }
 
+function stripDataUriPrefix(raw) {
+  const str = String(raw || '');
+  const idx = str.indexOf(',');
+  return idx >= 0 && str.startsWith('data:') ? str.slice(idx + 1) : str;
+}
+
 async function ensureDir(dirPath) {
   if (!dirPath || Platform.OS === 'web') return;
-  const dirInfo = await FileSystem.getInfoAsync(dirPath);
-  if (!dirInfo.exists) {
+  try {
     await FileSystem.makeDirectoryAsync(dirPath, { intermediates: true });
+  } catch {
+    const dirInfo = await FileSystem.getInfoAsync(dirPath).catch(() => null);
+    if (!dirInfo?.exists) {
+      throw new Error('Não foi possível preparar o armazenamento local de fotos.');
+    }
   }
 }
 
@@ -172,63 +182,86 @@ async function getSafeFileSize(uri) {
   }
 }
 
-function loadBrowserImage(uri) {
-  return new Promise((resolve, reject) => {
-    const img = new window.Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('Não foi possível carregar a imagem selecionada.'));
-    img.src = uri;
-  });
-}
-
-function resizeBrowserImageToDataUri(img, maxWidth, quality) {
-  const srcW = img.naturalWidth || img.width || maxWidth;
-  const srcH = img.naturalHeight || img.height || maxWidth;
-  const targetW = srcW > maxWidth ? maxWidth : srcW;
-  const targetH = Math.max(1, Math.round((srcH * targetW) / Math.max(1, srcW)));
-
-  const canvas = document.createElement('canvas');
-  canvas.width = targetW;
-  canvas.height = targetH;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(img, 0, 0, targetW, targetH);
-  return canvas.toDataURL('image/jpeg', quality);
-}
-
-async function processPotholePhotoWeb(rawUri) {
-  const baseId = `pothole_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  try {
-    const img = await loadBrowserImage(rawUri);
-    const thumbUri = resizeBrowserImageToDataUri(img, 200, 0.6);
-    const fullUri = resizeBrowserImageToDataUri(img, 1080, 0.85);
-    const thumbBytes = estimateDataUriBytes(thumbUri);
-    const fullBytes = estimateDataUriBytes(fullUri);
-
-    await recordDiagnosticEvent('MIDIA', 'Foto otimizada via Canvas Web em dupla resolução', {
-      thumbBytes,
-      fullBytes,
-    });
-
-    return {
-      id: baseId,
-      thumbUri,
-      fullUri,
-      thumbBytes,
-      fullBytes,
-    };
-  } finally {
-    await deleteTempPhoto(rawUri);
+async function persistBase64OrMove(base64Data, sourceUri, destinationUri) {
+  await ensurePotholePhotosDir();
+  if (base64Data) {
+    const cleanB64 = stripDataUriPrefix(base64Data);
+    try {
+      await FileSystem.writeAsStringAsync(destinationUri, cleanB64, { encoding: 'base64' });
+      return destinationUri;
+    } catch {
+      return `data:image/jpeg;base64,${cleanB64}`;
+    }
   }
+  await moveOrCopyToDestination(sourceUri, destinationUri);
+  return destinationUri;
+}
+
+export async function saveProcessedPotholePhotoFromBase64({
+  thumbBase64,
+  fullBase64,
+  rawUriToClean = null,
+}) {
+  if (Platform.OS === 'web') {
+    throw new Error('O envio de fotos e relatos é exclusivo do aplicativo Android Olho na Via.');
+  }
+
+  const cleanThumbB64 = stripDataUriPrefix(thumbBase64);
+  const cleanFullB64 = stripDataUriPrefix(fullBase64);
+  if (!cleanThumbB64 || !cleanFullB64) {
+    throw new Error('Dados da foto revisada estão incompletos.');
+  }
+
+  await ensurePotholePhotosDir();
+
+  const baseId = `pothole_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const thumbDest = `${POTHOLE_PHOTOS_DIR}${baseId}_thumb.jpg`;
+  const fullDest = `${POTHOLE_PHOTOS_DIR}${baseId}_full.jpg`;
+
+  let thumbUri = thumbDest;
+  let fullUri = fullDest;
+
+  try {
+    await FileSystem.writeAsStringAsync(thumbDest, cleanThumbB64, { encoding: 'base64' });
+  } catch {
+    thumbUri = `data:image/jpeg;base64,${cleanThumbB64}`;
+  }
+
+  try {
+    await FileSystem.writeAsStringAsync(fullDest, cleanFullB64, { encoding: 'base64' });
+  } catch {
+    fullUri = `data:image/jpeg;base64,${cleanFullB64}`;
+  }
+
+  if (rawUriToClean) {
+    await deleteTempPhoto(rawUriToClean);
+  }
+
+  const thumbBytes = Math.floor((cleanThumbB64.length * 3) / 4);
+  const fullBytes = Math.floor((cleanFullB64.length * 3) / 4);
+
+  await recordDiagnosticEvent('MIDIA', 'Foto revisada e otimizada com base64 em memória', {
+    thumbBytes,
+    fullBytes,
+  });
+
+  return {
+    id: baseId,
+    thumbUri,
+    fullUri,
+    thumbBase64: cleanThumbB64,
+    fullBase64: cleanFullB64,
+    thumbBytes,
+    fullBytes,
+  };
 }
 
 export async function processPotholePhoto(rawUri, options = {}) {
+  if (Platform.OS === 'web') {
+    throw new Error('O envio de fotos e relatos é exclusivo do aplicativo Android Olho na Via.');
+  }
   if (!rawUri || typeof rawUri !== 'string') {
     throw new Error('Nenhuma imagem foi capturada para processamento.');
-  }
-
-  if (Platform.OS === 'web') {
-    return processPotholePhotoWeb(rawUri);
   }
 
   await ensurePotholePhotosDir();
@@ -238,59 +271,63 @@ export async function processPotholePhoto(rawUri, options = {}) {
   const fullDest = `${POTHOLE_PHOTOS_DIR}${baseId}_full.jpg`;
 
   const tempUrisToClean = new Set([rawUri]);
-  let thumbMoved = false;
-  let fullMoved = false;
+  let finalThumbUri = thumbDest;
+  let finalFullUri = fullDest;
 
   try {
     const thumbResult = await ImageManipulator.manipulateAsync(
       rawUri,
       [{ resize: { width: 200 } }],
-      { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG }
+      { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true }
     );
     if (thumbResult?.uri) {
       tempUrisToClean.add(thumbResult.uri);
-      await moveOrCopyToDestination(thumbResult.uri, thumbDest);
-      tempUrisToClean.delete(thumbResult.uri);
-      thumbMoved = true;
     }
+    finalThumbUri = await persistBase64OrMove(
+      thumbResult?.base64,
+      thumbResult?.uri,
+      thumbDest
+    );
 
     const shouldResizeFull = !options.width || options.width > 1080;
     const fullActions = shouldResizeFull ? [{ resize: { width: 1080 } }] : [];
     const fullResult = await ImageManipulator.manipulateAsync(rawUri, fullActions, {
       compress: 0.85,
       format: ImageManipulator.SaveFormat.JPEG,
+      base64: true,
     });
     if (fullResult?.uri) {
       tempUrisToClean.add(fullResult.uri);
-      await moveOrCopyToDestination(fullResult.uri, fullDest);
-      tempUrisToClean.delete(fullResult.uri);
-      fullMoved = true;
     }
+    finalFullUri = await persistBase64OrMove(fullResult?.base64, fullResult?.uri, fullDest);
 
-    const [thumbBytes, fullBytes] = await Promise.all([
-      getSafeFileSize(thumbDest),
-      getSafeFileSize(fullDest),
-    ]);
+    const thumbBytes = thumbResult?.base64
+      ? Math.floor((thumbResult.base64.length * 3) / 4)
+      : await getSafeFileSize(finalThumbUri);
+    const fullBytes = fullResult?.base64
+      ? Math.floor((fullResult.base64.length * 3) / 4)
+      : await getSafeFileSize(finalFullUri);
 
-    await recordDiagnosticEvent('MIDIA', 'Foto otimizada em dupla resolução', {
+    await recordDiagnosticEvent('MIDIA', 'Foto otimizada em dupla resolução com base64', {
       thumbBytes,
       fullBytes,
     });
 
     return {
       id: baseId,
-      thumbUri: thumbDest,
-      fullUri: fullDest,
+      thumbUri: finalThumbUri,
+      fullUri: finalFullUri,
+      thumbBase64: thumbResult?.base64 || null,
+      fullBase64: fullResult?.base64 || null,
       thumbBytes,
       fullBytes,
     };
   } catch (error) {
-    if (thumbMoved) await deleteTempPhoto(thumbDest);
-    if (fullMoved) await deleteTempPhoto(fullDest);
+    await deletePotholePhotos(finalThumbUri, finalFullUri);
     throw error;
   } finally {
     const cleanupTasks = Array.from(tempUrisToClean)
-      .filter((uri) => uri !== thumbDest && uri !== fullDest)
+      .filter((uri) => uri !== finalThumbUri && uri !== finalFullUri)
       .map((uri) => deleteTempPhoto(uri));
     await Promise.all(cleanupTasks);
   }
@@ -301,6 +338,9 @@ export async function processPotholePhoto(rawUri, options = {}) {
  */
 export const LocalPotholeMediaAdapter = {
   async uploadPhotoPair({ thumbUri, fullUri, isDemoSession = false }) {
+    if (Platform.OS === 'web') {
+      throw new Error('O envio de fotos e relatos é exclusivo do aplicativo Android Olho na Via.');
+    }
     if (isDemoSession) {
       throw new Error('Modo Demonstração é somente leitura. Crie uma conta para enviar fotos.');
     }
@@ -326,11 +366,20 @@ export const LocalPotholeMediaAdapter = {
  * e foto original para originals/{uuid}.jpg no bucket pothole-photos.
  */
 export const SupabasePotholeMediaAdapter = {
-  async uploadPhotoPair({ thumbUri, fullUri, isDemoSession = false }) {
+  async uploadPhotoPair({
+    thumbUri,
+    fullUri,
+    thumbBase64 = null,
+    fullBase64 = null,
+    isDemoSession = false,
+  }) {
+    if (Platform.OS === 'web') {
+      throw new Error('O envio de fotos e relatos é exclusivo do aplicativo Android Olho na Via.');
+    }
     if (isDemoSession) {
       throw new Error('Modo Demonstração é somente leitura. Crie uma conta para enviar fotos.');
     }
-    if (!thumbUri || !fullUri) {
+    if ((!thumbUri && !thumbBase64) || (!fullUri && !fullBase64)) {
       throw new Error('Arquivos de foto inválidos para envio à nuvem.');
     }
 
@@ -339,8 +388,8 @@ export const SupabasePotholeMediaAdapter = {
     const fullStoragePath = `originals/${uuid}.jpg`;
 
     const [thumbBuffer, fullBuffer] = await Promise.all([
-      uriToArrayBuffer(thumbUri),
-      uriToArrayBuffer(fullUri),
+      thumbBase64 ? Promise.resolve(base64ToArrayBuffer(thumbBase64)) : uriToArrayBuffer(thumbUri),
+      fullBase64 ? Promise.resolve(base64ToArrayBuffer(fullBase64)) : uriToArrayBuffer(fullUri),
     ]);
 
     const [thumbUpload, fullUpload] = await Promise.all([

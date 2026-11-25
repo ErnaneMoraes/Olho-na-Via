@@ -29,20 +29,20 @@ const ONBOARDING_SLIDES = [
   {
     id: 'slide-safety',
     icon: 'camera',
-    badge: '2 de 3 • Segurança e Comunidade',
-    title: 'Registre com segurança e atualize o status',
+    badge: '2 de 3 • Segurança e Captura Android',
+    title: 'Fotografe apenas o buraco pelo app Android',
     description:
-      'Nunca tire fotos enquanto dirige — estacione em local seguro antes de fotografar. Enquadre o buraco com clareza e ajude outros motoristas confirmando se continua aberto ou se já foi tampado.',
-    tip: 'Cada verificação com foto mantém o mapa sempre atualizado para toda a cidade.',
+      'Nunca tire fotos enquanto dirige — estacione em local seguro antes de registrar. Os registros com foto são exclusivos pelo aplicativo Android no local e passam por revisão onde você pode cobrir placas ou números antes de enviar.',
+    tip: 'Proibido fotografar rostos, crianças, selfies, placas de veículos, números de casas ou conteúdo impróprio.',
   },
   {
     id: 'slide-lgpd',
     icon: 'shield-halved',
     badge: '3 de 3 • Privacidade e LGPD',
-    title: 'Privacidade e LGPD em primeiro lugar',
+    title: 'Privacidade e proteção de dados (LGPD)',
     description:
-      'Publique como Usuário Anônimo sempre que quiser, ocultando seu apelido e identificação. Suas senhas nunca são salvas em texto puro e o GPS é usado apenas para posicionar o relato no mapa.',
-    tip: 'Você controla seu modo de exibição a qualquer momento na barra superior.',
+      'Você pode publicar de forma anônima (exibindo "Usuário Anônimo" ao público) sempre que quiser. Também contamos com checagem automática de rostos e ferramenta de tarja escura com o dedo antes do envio.',
+    tip: 'Use a ferramenta de tarja na revisão caso apareça alguma placa ou endereço ao fundo.',
   },
 ];
 

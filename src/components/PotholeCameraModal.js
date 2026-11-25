@@ -3,11 +3,12 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Image,
+  Alert,
   Linking,
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -18,71 +19,32 @@ import { SharedStyles } from '../../components/StyleSheet/Styles';
 import {
   CancelButton,
   PrimaryButton,
-  SaveButton,
-  SecondaryButton,
 } from '../../components/common/Buttons';
 import { useAppSettings } from '../context/AppSettingsContext';
 import { recordAppErrorLog } from '../services/diagnosticLogService';
-import { deleteTempPhoto, processPotholePhoto } from '../services/potholeMediaService';
-
-function pickWebImageFile() {
-  return new Promise((resolve) => {
-    if (typeof document === 'undefined') {
-      resolve(null);
-      return;
-    }
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.style.display = 'none';
-
-    const cleanup = () => {
-      if (input.parentNode) input.parentNode.removeChild(input);
-    };
-
-    input.onchange = () => {
-      const file = input.files?.[0];
-      cleanup();
-      if (!file) {
-        resolve(null);
-        return;
-      }
-      const objectUrl = URL.createObjectURL(file);
-      const img = new window.Image();
-      img.onload = () =>
-        resolve({ uri: objectUrl, width: img.naturalWidth || 1080, height: img.naturalHeight || 720 });
-      img.onerror = () => resolve({ uri: objectUrl, width: 1080, height: 720 });
-      img.src = objectUrl;
-    };
-
-    input.oncancel = () => {
-      cleanup();
-      resolve(null);
-    };
-
-    document.body.appendChild(input);
-    input.click();
-  });
-}
+import { verifyCapturedPhotoSafety } from '../services/photoSafetyService';
+import { deleteTempPhoto } from '../services/potholeMediaService';
+import { PhotoReviewModal } from './PhotoReviewModal';
 
 export function PotholeCameraModal({
   visible,
   onClose,
   onPhotoConfirmed,
   guideText = 'Enquadre o buraco na via',
-  previewTitle = 'Confirmar Foto do Buraco',
+  previewTitle = 'Revisar Foto do Buraco',
 }) {
   const insets = useSafeAreaInsets();
-  const { colors, radiusCard, radiusButton, borderWidth, cardShadow, settings } =
+  const { colors, radiusCard, radiusButton, radiusInput, borderWidth, cardShadow, settings } =
     useAppSettings();
 
   const cameraRef = useRef(null);
   const [permission, requestPermission] = useCameraPermissions();
   const [facing] = useState('back');
   const [isCameraReady, setIsCameraReady] = useState(false);
+  const [noticeAccepted, setNoticeAccepted] = useState(false);
   const [flashEnabled, setFlashEnabled] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [checkingSafety, setCheckingSafety] = useState(false);
   const [capturedPhoto, setCapturedPhoto] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -94,9 +56,10 @@ export function PotholeCameraModal({
     if (!visible) {
       setCapturedPhoto(null);
       setIsCameraReady(false);
+      setNoticeAccepted(false);
       setFlashEnabled(false);
       setIsCapturing(false);
-      setIsProcessing(false);
+      setCheckingSafety(false);
       setErrorMsg('');
       return;
     }
@@ -107,19 +70,20 @@ export function PotholeCameraModal({
   }, [visible, isWeb, permission, requestPermission]);
 
   const handleCancel = async () => {
-    if (isProcessing) return;
+    if (isCapturing || checkingSafety) return;
     if (capturedPhoto?.uri) {
       await deleteTempPhoto(capturedPhoto.uri);
     }
     setCapturedPhoto(null);
     setIsCameraReady(false);
+    setNoticeAccepted(false);
     setFlashEnabled(false);
     setErrorMsg('');
     onClose();
   };
 
   const handleCapture = async () => {
-    if (!cameraRef.current || isCapturing || isProcessing) return;
+    if (isWeb || !cameraRef.current || isCapturing || checkingSafety) return;
     setErrorMsg('');
     setIsCapturing(true);
     try {
@@ -127,31 +91,36 @@ export function PotholeCameraModal({
         quality: 0.85,
         shutterSound: Boolean(settings?.cameraShutterSound),
       });
-      if (photo?.uri) {
-        setIsCameraReady(false);
-        setCapturedPhoto(photo);
-      } else {
+      if (!photo?.uri) {
         setErrorMsg('Não foi possível capturar a foto. Tente novamente.');
+        return;
       }
+
+      setCheckingSafety(true);
+      const safety = await verifyCapturedPhotoSafety(photo.uri);
+      if (safety?.blocked) {
+        await deleteTempPhoto(photo.uri);
+        const reason =
+          safety.reason ||
+          'Rosto detectado na imagem. Tire uma nova foto focando apenas no buraco na via.';
+        setErrorMsg(reason);
+        Alert.alert('Foto bloqueada por privacidade', reason);
+        return;
+      }
+
+      setIsCameraReady(false);
+      setCapturedPhoto(photo);
     } catch (err) {
       await recordAppErrorLog('PotholeCameraModal.capture', err);
       setErrorMsg('Erro ao acionar a câmera. Tente novamente.');
     } finally {
+      setCheckingSafety(false);
       setIsCapturing(false);
     }
   };
 
-  const handlePickWebFile = async () => {
-    if (isProcessing) return;
-    setErrorMsg('');
-    const picked = await pickWebImageFile();
-    if (picked?.uri) {
-      setCapturedPhoto(picked);
-    }
-  };
-
   const handleRetake = async () => {
-    if (isProcessing) return;
+    if (checkingSafety) return;
     if (capturedPhoto?.uri) {
       await deleteTempPhoto(capturedPhoto.uri);
     }
@@ -160,27 +129,51 @@ export function PotholeCameraModal({
     setErrorMsg('');
   };
 
-  const handleConfirmPhoto = async () => {
-    if (!capturedPhoto?.uri || isProcessing) return;
-    setErrorMsg('');
-    setIsProcessing(true);
-    try {
-      const processedMedia = await processPotholePhoto(capturedPhoto.uri, {
-        width: capturedPhoto.width,
-        height: capturedPhoto.height,
-      });
-      setCapturedPhoto(null);
-      onPhotoConfirmed(processedMedia);
-    } catch (err) {
-      await recordAppErrorLog('PotholeCameraModal.process', err);
-      setErrorMsg('Falha ao otimizar a imagem. Tente capturar ou escolher outra foto.');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+  const renderWebBlockedState = () => (
+    <View
+      style={[
+        styles.gateRoot,
+        {
+          backgroundColor: colors.background,
+          paddingTop: topSafeOffset,
+          paddingBottom: Math.max(20, insets.bottom + 12),
+        },
+      ]}
+    >
+      <View
+        style={[
+          SharedStyles.contentContainer,
+          styles.gateCard,
+          cardShadow,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+            borderWidth,
+            borderRadius: radiusCard,
+          },
+        ]}
+      >
+        <View style={[styles.gateIconCircle, { backgroundColor: colors.accentSoft }]}>
+          <FontAwesome6 name="mobile-screen-button" size={26} color={colors.primary} />
+        </View>
+        <Text style={[styles.gateTitle, { color: colors.text }]}>
+          Registro exclusivo pelo aplicativo Android
+        </Text>
+        <Text style={[styles.gateBody, { color: colors.textSecondary }]}>
+          Para garantir registros reais no local, o envio de fotos e novos buracos só pode ser
+          feito diretamente pela câmera do aplicativo Android Olho na Via — nunca por webcam ou
+          arquivos do computador. O link oficial para baixar o aplicativo Android será
+          disponibilizado em breve.
+        </Text>
+        <View style={styles.gateActions}>
+          <PrimaryButton label="Entendi" icon="check" onPress={handleCancel} />
+        </View>
+      </View>
+    </View>
+  );
 
   const renderPermissionState = () => {
-    if (!permission && !isWeb) {
+    if (!permission) {
       return (
         <View style={[styles.gateRoot, { backgroundColor: colors.background }]}>
           <View
@@ -230,34 +223,18 @@ export function PotholeCameraModal({
           ]}
         >
           <View style={[styles.gateIconCircle, { backgroundColor: colors.accentSoft }]}>
-            <FontAwesome6 name={isWeb ? 'image' : 'camera'} size={26} color={colors.primary} />
+            <FontAwesome6 name="camera" size={26} color={colors.primary} />
           </View>
           <Text style={[styles.gateTitle, { color: colors.text }]}>
-            {isWeb ? 'Enviar foto do buraco' : 'Acesso à câmera necessário'}
+            Acesso à câmera necessário
           </Text>
           <Text style={[styles.gateBody, { color: colors.textSecondary }]}>
-            {isWeb
-              ? 'Selecione uma imagem do seu computador ou ative sua webcam para registrar a ocorrência no mapa.'
-              : 'Para registrar um buraco no Olho na Via, precisamos usar a câmera do seu celular e anexar uma foto atual da via.'}
+            Para registrar um buraco no Olho na Via, precisamos usar a câmera traseira do seu
+            celular e anexar uma foto atual da via.
           </Text>
 
           <View style={styles.gateActions}>
-            {isWeb ? (
-              <>
-                <PrimaryButton
-                  label="Escolher Foto do Computador"
-                  icon="image"
-                  onPress={handlePickWebFile}
-                />
-                {permission?.canAskAgain !== false ? (
-                  <SecondaryButton
-                    label="Usar Webcam"
-                    icon="camera"
-                    onPress={requestPermission}
-                  />
-                ) : null}
-              </>
-            ) : permission?.canAskAgain ? (
+            {permission?.canAskAgain ? (
               <PrimaryButton label="Permitir Câmera" icon="camera" onPress={requestPermission} />
             ) : (
               <PrimaryButton
@@ -273,104 +250,79 @@ export function PotholeCameraModal({
     );
   };
 
-  const renderPreviewMode = () => (
-    <View style={[styles.cameraContainer, { backgroundColor: colors.background }]}>
-      <Image source={{ uri: capturedPhoto.uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-
-      <View
-        pointerEvents="box-none"
-        style={[
-          StyleSheet.absoluteFill,
-          styles.overlayRoot,
-          {
-            paddingTop: topSafeOffset,
-            paddingBottom: Math.max(24, insets.bottom + 16),
-          },
-        ]}
+  const renderPreCaptureNotice = () => (
+    <View
+      style={[
+        styles.gateRoot,
+        {
+          backgroundColor: colors.background,
+          paddingTop: topSafeOffset,
+          paddingBottom: Math.max(20, insets.bottom + 12),
+        },
+      ]}
+    >
+      <ScrollView
+        contentContainerStyle={[SharedStyles.contentContainer, styles.noticeScroll]}
+        showsVerticalScrollIndicator={false}
       >
-        <View style={styles.topOverlayBar}>
-          <Pressable
-            onPress={handleCancel}
-            disabled={isProcessing}
-            style={[
-              styles.hudIconBtn,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-                borderWidth,
-                borderRadius: radiusButton,
-              },
-            ]}
-          >
-            <FontAwesome6 name="xmark" size={18} color={colors.text} />
-          </Pressable>
+        <View
+          style={[
+            styles.gateCard,
+            cardShadow,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+              borderWidth,
+              borderRadius: radiusCard,
+            },
+          ]}
+        >
+          <View style={[styles.gateIconCircle, { backgroundColor: colors.warningSoft }]}>
+            <FontAwesome6 name="shield-halved" size={26} color={colors.warning} />
+          </View>
+          <Text style={[styles.gateTitle, { color: colors.text }]}>
+            Aviso de Responsabilidade e Privacidade
+          </Text>
+          <Text style={[styles.gateBody, { color: colors.textSecondary }]}>
+            Fotografe apenas com o veículo parado e em local seguro. Para proteger a privacidade de
+            todos, é estritamente proibido publicar:
+          </Text>
 
           <View
             style={[
-              styles.guidePill,
+              styles.rulesBox,
               {
-                backgroundColor: colors.card,
+                backgroundColor: colors.surfaceMuted,
                 borderColor: colors.border,
-                borderWidth,
-                borderRadius: radiusButton,
+                borderWidth: 1,
+                borderRadius: radiusInput,
               },
             ]}
           >
-            <FontAwesome6 name="image" size={13} color={colors.primary} />
-            <Text style={[styles.guideText, { color: colors.text }]}>{previewTitle}</Text>
+            <Text style={[styles.ruleItem, { color: colors.text }]}>
+              • Rostos, crianças, pedestres ou selfies;
+            </Text>
+            <Text style={[styles.ruleItem, { color: colors.text }]}>
+              • Placas de veículos visíveis;
+            </Text>
+            <Text style={[styles.ruleItem, { color: colors.text }]}>
+              • Números de casas, fachadas ou bens identificáveis;
+            </Text>
+            <Text style={[styles.ruleItem, { color: colors.text }]}>
+              • Conteúdo impróprio, ofensivo ou obsceno.
+            </Text>
           </View>
 
-          <View style={styles.hudSpacer} />
-        </View>
-
-        <View style={styles.previewBottomWrap}>
-          {errorMsg ? (
-            <View
-              style={[
-                styles.errorBanner,
-                {
-                  backgroundColor: colors.dangerSoft,
-                  borderColor: colors.danger,
-                  borderWidth: 1,
-                  borderRadius: radiusCard,
-                },
-              ]}
-            >
-              <FontAwesome6 name="circle-exclamation" size={14} color={colors.danger} />
-              <Text style={[styles.errorText, { color: colors.dangerText }]}>{errorMsg}</Text>
-            </View>
-          ) : null}
-
-          <View
-            style={[
-              SharedStyles.contentContainer,
-              styles.previewActionCard,
-              cardShadow,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-                borderWidth,
-                borderRadius: radiusCard,
-              },
-            ]}
-          >
-            <SecondaryButton
-              label={isWeb ? 'Trocar Foto' : 'Tirar Outra'}
-              icon="rotate"
-              onPress={handleRetake}
-              disabled={isProcessing}
-              style={styles.previewBtn}
-            />
-            <SaveButton
-              label={isProcessing ? 'Otimizando...' : 'Usar Foto'}
+          <View style={styles.gateActions}>
+            <PrimaryButton
+              label="Li e concordo — Fotografar apenas o buraco"
               icon="check"
-              onPress={handleConfirmPhoto}
-              loading={isProcessing}
-              style={styles.previewBtn}
+              onPress={() => setNoticeAccepted(true)}
             />
+            <CancelButton label="Cancelar" onPress={handleCancel} />
           </View>
         </View>
-      </View>
+      </ScrollView>
     </View>
   );
 
@@ -396,69 +348,80 @@ export function PotholeCameraModal({
           },
         ]}
       >
-        <View style={styles.topOverlayBar}>
-          <Pressable
-            onPress={handleCancel}
-            accessibilityLabel="Fechar câmera"
-            style={[
-              styles.hudIconBtn,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-                borderWidth,
-                borderRadius: radiusButton,
-              },
-            ]}
-          >
-            <FontAwesome6 name="xmark" size={18} color={colors.text} />
-          </Pressable>
-
-          <View
-            style={[
-              styles.guidePill,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-                borderWidth,
-                borderRadius: radiusButton,
-              },
-            ]}
-          >
-            <FontAwesome6 name="road-circle-exclamation" size={13} color={colors.primary} />
-            <Text style={[styles.guideText, { color: colors.text }]}>{guideText}</Text>
-          </View>
-
-          {!isWeb && facing === 'back' ? (
+        <View style={styles.topHudStack}>
+          <View style={styles.topOverlayBar}>
             <Pressable
-              onPress={() => setFlashEnabled((v) => !v)}
-              accessibilityLabel="Alternar flash"
+              onPress={handleCancel}
+              accessibilityLabel="Fechar câmera"
               style={[
-                styles.flashBtn,
+                styles.hudIconBtn,
                 {
-                  backgroundColor: flashEnabled ? colors.warningSoft : colors.card,
-                  borderColor: flashEnabled ? colors.warning : colors.border,
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
                   borderWidth,
                   borderRadius: radiusButton,
                 },
               ]}
             >
-              <FontAwesome6
-                name="bolt"
-                size={14}
-                color={flashEnabled ? colors.warning : colors.textSecondary}
-              />
-              <Text
+              <FontAwesome6 name="xmark" size={18} color={colors.text} />
+            </Pressable>
+
+            <View
+              style={[
+                styles.guidePill,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                  borderWidth,
+                  borderRadius: radiusButton,
+                },
+              ]}
+            >
+              <FontAwesome6 name="road-circle-exclamation" size={13} color={colors.primary} />
+              <Text numberOfLines={1} style={[styles.guideText, { color: colors.text }]}>
+                {guideText}
+              </Text>
+            </View>
+
+            {facing === 'back' ? (
+              <Pressable
+                onPress={() => setFlashEnabled((v) => !v)}
+                accessibilityLabel="Alternar flash"
                 style={[
-                  styles.flashText,
-                  { color: flashEnabled ? colors.warningText : colors.text },
+                  styles.flashBtn,
+                  {
+                    backgroundColor: flashEnabled ? colors.warningSoft : colors.card,
+                    borderColor: flashEnabled ? colors.warning : colors.border,
+                    borderWidth,
+                    borderRadius: radiusButton,
+                  },
                 ]}
               >
-                Flash
-              </Text>
-            </Pressable>
-          ) : (
-            <View style={styles.hudSpacer} />
-          )}
+                <FontAwesome6
+                  name="bolt"
+                  size={14}
+                  color={flashEnabled ? colors.warning : colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.flashText,
+                    { color: flashEnabled ? colors.warningText : colors.text },
+                  ]}
+                >
+                  Flash
+                </Text>
+              </Pressable>
+            ) : (
+              <View style={styles.hudSpacer} />
+            )}
+          </View>
+
+          <View style={[styles.privacyReminderPill, { backgroundColor: colors.overlay }]}>
+            <FontAwesome6 name="shield-halved" size={11} color="#FFFFFF" />
+            <Text numberOfLines={1} style={styles.privacyReminderText}>
+              Fotografe apenas o buraco • Sem rostos, placas ou números
+            </Text>
+          </View>
         </View>
 
         {/* Guia de enquadramento central */}
@@ -495,18 +458,9 @@ export function PotholeCameraModal({
           ) : null}
 
           <View style={styles.captureButtonsRow}>
-            {isWeb ? (
-              <SecondaryButton
-                compact
-                label="Arquivo"
-                icon="image"
-                onPress={handlePickWebFile}
-              />
-            ) : null}
-
             <Pressable
               onPress={handleCapture}
-              disabled={isCapturing}
+              disabled={isCapturing || checkingSafety}
               accessibilityLabel="Capturar foto do buraco"
               style={({ pressed }) => [
                 styles.shutterOuter,
@@ -518,7 +472,7 @@ export function PotholeCameraModal({
               ]}
             >
               <View style={[styles.shutterInner, { backgroundColor: colors.primary }]}>
-                {isCapturing ? (
+                {isCapturing || checkingSafety ? (
                   <ActivityIndicator size="small" color={colors.primaryText} />
                 ) : (
                   <FontAwesome6 name="camera" size={24} color={colors.primaryText} />
@@ -533,11 +487,28 @@ export function PotholeCameraModal({
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={handleCancel}>
-      {capturedPhoto
-        ? renderPreviewMode()
-        : permission?.granted
-          ? renderLiveCamera()
-          : renderPermissionState()}
+      {isWeb ? (
+        renderWebBlockedState()
+      ) : capturedPhoto ? (
+        <PhotoReviewModal
+          inline
+          photo={capturedPhoto}
+          title={previewTitle}
+          onRetake={handleRetake}
+          onCancel={handleCancel}
+          onPhotoApproved={(approvedMedia) => {
+            setCapturedPhoto(null);
+            setNoticeAccepted(false);
+            onPhotoConfirmed?.(approvedMedia);
+          }}
+        />
+      ) : !permission?.granted ? (
+        renderPermissionState()
+      ) : !noticeAccepted ? (
+        renderPreCaptureNotice()
+      ) : (
+        renderLiveCamera()
+      )}
     </Modal>
   );
 }
@@ -551,11 +522,43 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
   },
+  topHudStack: {
+    gap: 8,
+    alignItems: 'center',
+  },
   topOverlayBar: {
+    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
+  },
+  privacyReminderPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 999,
+    gap: 6,
+  },
+  privacyReminderText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  noticeScroll: {
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
+  rulesBox: {
+    width: '100%',
+    padding: 12,
+    gap: 6,
+  },
+  ruleItem: {
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '600',
   },
   hudIconBtn: {
     width: 42,

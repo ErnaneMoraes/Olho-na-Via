@@ -477,10 +477,12 @@ export function SettingsModal({ visible, session, onModerationChange, onClose })
                   ]}
                 >
                   <Text style={[styles.helperText, { color: colors.textSecondary }]}>
-                    • Registre buracos apenas quando estiver parado e em local seguro, longe do
-                    fluxo de veículos.{'\n'}
-                    • Confirme no mapa quando uma via continuar aberta ou já tiver sido tampada com
-                    uma foto atualizada.{'\n'}
+                    • Registros e confirmações com foto são exclusivos pelo aplicativo Android, no
+                    local, e apenas com o veículo parado em segurança.{'\n'}
+                    • É proibido enviar imagens com rostos, crianças, selfies, placas de veículos,
+                    números de casas ou conteúdo impróprio.{'\n'}
+                    • Antes do envio, você revisa a foto e pode desenhar tarjas escuras com o dedo
+                    sobre qualquer placa ou endereço ao fundo.{'\n'}
                     • Se preferir, ative o modo anônimo para ocultar seu apelido do público geral.
                   </Text>
                 </View>
