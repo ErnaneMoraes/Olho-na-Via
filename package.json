@@ -1,6 +1,6 @@
 {
   "name": "olho-na-via",
-  "version": "1.7.5",
+  "version": "1.7.6",
   "main": "index.js",
   "private": true,
   "scripts": {

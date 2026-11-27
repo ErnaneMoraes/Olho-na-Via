@@ -1,8 +1,17 @@
 export const APP_NAME = 'Olho na Via';
-export const APP_VERSION = '1.7.5';
-export const APP_BUILD_TAG = '2026.11.25-unique-report-views';
+export const APP_VERSION = '1.7.6';
+export const APP_BUILD_TAG = '2026.11.27-desktop-left-hud-persistent-pins';
 
 export const APP_CHANGELOG = [
+  {
+    version: '1.7.6',
+    date: '27/11/2026',
+    title: 'Painel Superior à Esquerda no Desktop Web e Pinos Persistentes no Zoom/Pan',
+    highlights: [
+      'Em navegadores Desktop (width >= 768px), o HUD superior (identidade, ações e filtros de status) passa a ficar alinhado à esquerda (420px), deixando centro e direita do mapa livres.',
+      'Reconciliação incremental de marcadores no Leaflet por ID sem apagar camadas durante animações de zoom/pan e mesclagem de registros em memória ao navegar pelo mapa.',
+    ],
+  },
   {
     version: '1.7.5',
     date: '25/11/2026',

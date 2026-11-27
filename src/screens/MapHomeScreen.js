@@ -12,6 +12,7 @@ import {
   StatusBar,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -105,6 +106,8 @@ export function MapHomeScreen({
   onRequestCreateAccount,
 }) {
   const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
+  const isDesktopWeb = Platform.OS === 'web' && windowWidth >= 768;
   const {
     colors,
     radiusCard,
@@ -122,6 +125,7 @@ export function MapHomeScreen({
   const gpsStatusRef = useRef('loading');
   const currentBoundsRef = useRef(null);
   const lastFetchedCenterRef = useRef(null);
+  const lastFetchedZoomRef = useRef(16);
   const lastFetchedKeyRef = useRef('');
   const regionDebounceRef = useRef(null);
   const isDemoRef = useRef(Boolean(session?.isDemo));
@@ -195,7 +199,7 @@ export function MapHomeScreen({
     Math.max(insets.top, Platform.OS === 'android' ? StatusBar.currentHeight || 24 : 12) + 8;
 
   const syncPotholesForBounds = useCallback(
-    async (bounds, { showSpinner = false, anchorCoords = null } = {}) => {
+    async (bounds, { showSpinner = false, anchorCoords = null, replaceAll = false } = {}) => {
       if (showSpinner) setIsRefreshing(true);
       try {
         const isSupabaseReady = isSupabaseConfigured();
@@ -221,7 +225,24 @@ export function MapHomeScreen({
           combined = [...reports, ...mergedSeeds];
         }
 
-        setPotholes(combined);
+        if (replaceAll) {
+          setPotholes(combined);
+        } else {
+          setPotholes((prev) => {
+            if (!Array.isArray(prev) || prev.length === 0) {
+              return combined;
+            }
+            const byId = new Map();
+            for (const item of prev) {
+              if (item?.id) byId.set(item.id, item);
+            }
+            for (const item of combined) {
+              if (item?.id) byId.set(item.id, item);
+            }
+            return Array.from(byId.values());
+          });
+        }
+
         setSelectedPothole((prev) => {
           if (!prev) return null;
           return combined.find((item) => item.id === prev.id) || prev;
@@ -443,8 +464,14 @@ export function MapHomeScreen({
         if (isSupabaseConfigured() && lastFetchedCenterRef.current) {
           const dLat = Math.abs(center.lat - lastFetchedCenterRef.current.latitude);
           const dLng = Math.abs(center.lng - lastFetchedCenterRef.current.longitude);
-          if (dLat > VIEWPORT_REFETCH_THRESHOLD || dLng > VIEWPORT_REFETCH_THRESHOLD) {
+          const numericZoom = Number(zoom) || 16;
+          if (
+            dLat > VIEWPORT_REFETCH_THRESHOLD ||
+            dLng > VIEWPORT_REFETCH_THRESHOLD ||
+            numericZoom < lastFetchedZoomRef.current
+          ) {
             lastFetchedKeyRef.current = roundedKey;
+            lastFetchedZoomRef.current = numericZoom;
             lastFetchedCenterRef.current = {
               latitude: center.lat,
               longitude: center.lng,
@@ -462,6 +489,7 @@ export function MapHomeScreen({
     syncPotholesForBounds(currentBoundsRef.current, {
       showSpinner: true,
       anchorCoords: userCoordsRef.current,
+      replaceAll: true,
     });
     refreshNotifications();
   }, [isRefreshing, syncPotholesForBounds, refreshNotifications]);
@@ -644,179 +672,261 @@ export function MapHomeScreen({
 
   const anonConfirmCopy = getAnonymousModeConfirmationCopy(Boolean(pendingAnonymousTarget));
 
-  const renderFloatingTopBar = () => (
+  const renderTopBarCard = () => (
     <View
-      pointerEvents="box-none"
       style={[
-        styles.topBarWrapper,
+        !isDesktopWeb ? SharedStyles.contentContainer : styles.desktopCardFullWidth,
+        styles.topBar,
+        cardShadow,
         {
-          top: topSafeOffset,
+          backgroundColor: colors.card,
+          borderColor: colors.border,
+          borderWidth,
+          borderRadius: radiusCard,
         },
       ]}
     >
-      <View
-        style={[
-          SharedStyles.contentContainer,
-          styles.topBar,
-          cardShadow,
+      <Pressable
+        onPress={session?.isDemo ? undefined : handleRequestToggleAnonymous}
+        disabled={Boolean(session?.isDemo)}
+        accessibilityRole={session?.isDemo ? undefined : 'button'}
+        accessibilityLabel={
+          session?.isDemo
+            ? 'Modo Demonstração'
+            : isAnonymousActive
+              ? 'Alternar para Modo Identificado'
+              : 'Alternar para Modo Anônimo'
+        }
+        android_ripple={session?.isDemo ? undefined : { color: colors.accentSoft }}
+        style={({ pressed, hovered }) => [
+          styles.identityPill,
+          Platform.OS === 'web' && !session?.isDemo ? styles.webPointer : null,
           {
-            backgroundColor: colors.card,
-            borderColor: colors.border,
-            borderWidth,
-            borderRadius: radiusCard,
+            backgroundColor: session?.isDemo
+              ? colors.surfaceMuted
+              : isAnonymousActive
+                ? colors.surfaceMuted
+                : colors.accentSoft,
+            borderRadius: radiusButton,
+            opacity: pressed ? 0.85 : hovered && !session?.isDemo ? 0.92 : 1,
           },
         ]}
       >
-        <Pressable
-          onPress={session?.isDemo ? undefined : handleRequestToggleAnonymous}
-          disabled={Boolean(session?.isDemo)}
-          accessibilityRole={session?.isDemo ? undefined : 'button'}
-          accessibilityLabel={
-            session?.isDemo
-              ? 'Modo Demonstração'
-              : isAnonymousActive
-                ? 'Alternar para Modo Identificado'
-                : 'Alternar para Modo Anônimo'
+        <FontAwesome6
+          name={
+            session?.isDemo ? 'eye' : isAnonymousActive ? 'user-secret' : 'user-check'
           }
-          android_ripple={session?.isDemo ? undefined : { color: colors.accentSoft }}
+          size={14}
+          color={
+            session?.isDemo
+              ? colors.textSecondary
+              : isAnonymousActive
+                ? colors.textSecondary
+                : colors.primary
+          }
+        />
+        <Text
+          numberOfLines={1}
           style={[
-            styles.identityPill,
+            styles.identityText,
             {
-              backgroundColor: session?.isDemo
-                ? colors.surfaceMuted
+              color: session?.isDemo
+                ? colors.text
                 : isAnonymousActive
-                  ? colors.surfaceMuted
-                  : colors.accentSoft,
-              borderRadius: radiusButton,
+                  ? colors.text
+                  : colors.primary,
             },
           ]}
         >
-          <FontAwesome6
-            name={
-              session?.isDemo ? 'eye' : isAnonymousActive ? 'user-secret' : 'user-check'
-            }
-            size={14}
-            color={
-              session?.isDemo
-                ? colors.textSecondary
-                : isAnonymousActive
-                  ? colors.textSecondary
-                  : colors.primary
-            }
-          />
-          <Text
-            numberOfLines={1}
-            style={[
-              styles.identityText,
-              {
-                color: session?.isDemo
-                  ? colors.text
-                  : isAnonymousActive
-                    ? colors.text
-                    : colors.primary,
-              },
-            ]}
-          >
-            {activeAuthorLabel}
-          </Text>
-          {session?.isDemo ? (
-            <View style={[styles.demoBadge, { backgroundColor: colors.warningSoft }]}>
-              <Text style={[styles.demoBadgeText, { color: colors.warningText }]}>DEMO</Text>
-            </View>
-          ) : null}
-        </Pressable>
+          {activeAuthorLabel}
+        </Text>
+        {session?.isDemo ? (
+          <View style={[styles.demoBadge, { backgroundColor: colors.warningSoft }]}>
+            <Text style={[styles.demoBadgeText, { color: colors.warningText }]}>DEMO</Text>
+          </View>
+        ) : null}
+      </Pressable>
 
-        <View style={styles.topActions}>
-          {gpsStatus === 'granted' ? (
-            <Pressable
-              onPress={handleManualRefresh}
-              disabled={isRefreshing}
-              accessibilityLabel="Atualizar mapa"
-              style={[
-                styles.iconActionBtn,
-                {
-                  backgroundColor: colors.surfaceMuted,
-                  borderRadius: radiusButton,
-                },
-              ]}
-            >
-              {isRefreshing ? (
-                <ActivityIndicator size="small" color={colors.primary} />
-              ) : (
-                <FontAwesome6 name="rotate" size={15} color={colors.primary} />
-              )}
-            </Pressable>
-          ) : null}
-
-          {session && !session.isDemo ? (
-            <Pressable
-              onPress={() => {
-                refreshNotifications();
-                setNotificationsVisible(true);
-              }}
-              accessibilityLabel="Abrir Notificações"
-              style={[
-                styles.iconActionBtn,
-                {
-                  backgroundColor:
-                    unreadNotifications.length > 0 ? colors.accentSoft : colors.surfaceMuted,
-                  borderRadius: radiusButton,
-                },
-              ]}
-            >
-              <FontAwesome6
-                name="bell"
-                size={15}
-                color={unreadNotifications.length > 0 ? colors.primary : colors.text}
-              />
-              {unreadNotifications.length > 0 ? (
-                <View style={[styles.notifBadge, { backgroundColor: colors.danger }]}>
-                  <Text style={styles.notifBadgeText}>
-                    {unreadNotifications.length > 9 ? '9+' : unreadNotifications.length}
-                  </Text>
-                </View>
-              ) : null}
-            </Pressable>
-          ) : null}
-
+      <View style={styles.topActions}>
+        {gpsStatus === 'granted' ? (
           <Pressable
-            onPress={() => setSettingsVisible(true)}
-            accessibilityLabel="Abrir Configurações"
-            style={[
+            onPress={handleManualRefresh}
+            disabled={isRefreshing}
+            accessibilityLabel="Atualizar mapa"
+            style={({ pressed, hovered }) => [
               styles.iconActionBtn,
+              Platform.OS === 'web' ? styles.webPointer : null,
               {
                 backgroundColor: colors.surfaceMuted,
                 borderRadius: radiusButton,
+                opacity: pressed ? 0.8 : hovered ? 0.88 : 1,
               },
             ]}
           >
-            <FontAwesome6 name="gear" size={16} color={colors.text} />
+            {isRefreshing ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <FontAwesome6 name="rotate" size={15} color={colors.primary} />
+            )}
           </Pressable>
+        ) : null}
 
+        {session && !session.isDemo ? (
           <Pressable
-            onPress={() => setLogoutModalVisible(true)}
-            accessibilityLabel="Sair da conta"
-            style={[
+            onPress={() => {
+              refreshNotifications();
+              setNotificationsVisible(true);
+            }}
+            accessibilityLabel="Abrir Notificações"
+            style={({ pressed, hovered }) => [
               styles.iconActionBtn,
+              Platform.OS === 'web' ? styles.webPointer : null,
               {
-                backgroundColor: colors.dangerSoft,
+                backgroundColor:
+                  unreadNotifications.length > 0 ? colors.accentSoft : colors.surfaceMuted,
                 borderRadius: radiusButton,
+                opacity: pressed ? 0.8 : hovered ? 0.88 : 1,
               },
             ]}
           >
-            <FontAwesome6 name="right-from-bracket" size={16} color={colors.danger} />
+            <FontAwesome6
+              name="bell"
+              size={15}
+              color={unreadNotifications.length > 0 ? colors.primary : colors.text}
+            />
+            {unreadNotifications.length > 0 ? (
+              <View style={[styles.notifBadge, { backgroundColor: colors.danger }]}>
+                <Text style={styles.notifBadgeText}>
+                  {unreadNotifications.length > 9 ? '9+' : unreadNotifications.length}
+                </Text>
+              </View>
+            ) : null}
           </Pressable>
-        </View>
+        ) : null}
+
+        <Pressable
+          onPress={() => setSettingsVisible(true)}
+          accessibilityLabel="Abrir Configurações"
+          style={({ pressed, hovered }) => [
+            styles.iconActionBtn,
+            Platform.OS === 'web' ? styles.webPointer : null,
+            {
+              backgroundColor: colors.surfaceMuted,
+              borderRadius: radiusButton,
+              opacity: pressed ? 0.8 : hovered ? 0.88 : 1,
+            },
+          ]}
+        >
+          <FontAwesome6 name="gear" size={16} color={colors.text} />
+        </Pressable>
+
+        <Pressable
+          onPress={() => setLogoutModalVisible(true)}
+          accessibilityLabel="Sair da conta"
+          style={({ pressed, hovered }) => [
+            styles.iconActionBtn,
+            Platform.OS === 'web' ? styles.webPointer : null,
+            {
+              backgroundColor: colors.dangerSoft,
+              borderRadius: radiusButton,
+              opacity: pressed ? 0.8 : hovered ? 0.88 : 1,
+            },
+          ]}
+        >
+          <FontAwesome6 name="right-from-bracket" size={16} color={colors.danger} />
+        </Pressable>
       </View>
     </View>
   );
 
-  const renderFilterBar = () => {
+  const renderFilterRowContent = () => {
     const filterOptions = [
       { id: 'all', label: `Todos (${filterCounts.all})`, icon: 'layer-group' },
       { id: 'open', label: `Abertos (${filterCounts.open})`, icon: 'triangle-exclamation' },
       { id: 'fixed', label: `Tampados (${filterCounts.fixed})`, icon: 'circle-check' },
     ];
+
+    return (
+      <View
+        style={[
+          !isDesktopWeb ? SharedStyles.contentContainer : styles.desktopCardFullWidth,
+          styles.filterRow,
+        ]}
+      >
+        {filterOptions.map((opt) => {
+          const active = statusFilter === opt.id;
+          const activeBg =
+            opt.id === 'open'
+              ? colors.danger
+              : opt.id === 'fixed'
+                ? colors.success
+                : colors.primary;
+          const inactiveIconColor =
+            opt.id === 'open'
+              ? colors.danger
+              : opt.id === 'fixed'
+                ? colors.success
+                : colors.primary;
+
+          return (
+            <Pressable
+              key={opt.id}
+              onPress={() => setStatusFilter(opt.id)}
+              style={({ pressed, hovered }) => [
+                styles.filterPill,
+                Platform.OS === 'web' ? styles.webPointer : null,
+                cardShadow,
+                {
+                  backgroundColor: active ? activeBg : colors.card,
+                  borderColor: active ? activeBg : colors.border,
+                  borderWidth,
+                  borderRadius: radiusButton,
+                  opacity: pressed ? 0.86 : hovered ? 0.94 : 1,
+                },
+              ]}
+            >
+              <FontAwesome6
+                name={opt.icon}
+                size={12}
+                color={active ? '#FFFFFF' : inactiveIconColor}
+              />
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.filterPillText,
+                  {
+                    color: active ? '#FFFFFF' : colors.text,
+                    fontVariant: typography.fontVariant,
+                  },
+                ]}
+              >
+                {opt.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    );
+  };
+
+  const renderFloatingTopBar = () => (
+    <View
+      pointerEvents="box-none"
+      style={[
+        isDesktopWeb ? styles.desktopHudWrapper : styles.topBarWrapper,
+        {
+          top: isDesktopWeb ? 16 : topSafeOffset,
+        },
+      ]}
+    >
+      {renderTopBarCard()}
+    </View>
+  );
+
+  const renderFilterBar = () => {
+    if (isDesktopWeb) {
+      return null;
+    }
 
     return (
       <View
@@ -828,60 +938,25 @@ export function MapHomeScreen({
           },
         ]}
       >
-        <View style={[SharedStyles.contentContainer, styles.filterRow]}>
-          {filterOptions.map((opt) => {
-            const active = statusFilter === opt.id;
-            const activeBg =
-              opt.id === 'open'
-                ? colors.danger
-                : opt.id === 'fixed'
-                  ? colors.success
-                  : colors.primary;
-            const inactiveIconColor =
-              opt.id === 'open'
-                ? colors.danger
-                : opt.id === 'fixed'
-                  ? colors.success
-                  : colors.primary;
-
-            return (
-              <Pressable
-                key={opt.id}
-                onPress={() => setStatusFilter(opt.id)}
-                style={[
-                  styles.filterPill,
-                  cardShadow,
-                  {
-                    backgroundColor: active ? activeBg : colors.card,
-                    borderColor: active ? activeBg : colors.border,
-                    borderWidth,
-                    borderRadius: radiusButton,
-                  },
-                ]}
-              >
-                <FontAwesome6
-                  name={opt.icon}
-                  size={12}
-                  color={active ? '#FFFFFF' : inactiveIconColor}
-                />
-                <Text
-                  style={[
-                    styles.filterPillText,
-                    {
-                      color: active ? '#FFFFFF' : colors.text,
-                      fontVariant: typography.fontVariant,
-                    },
-                  ]}
-                >
-                  {opt.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+        {renderFilterRowContent()}
       </View>
     );
   };
+
+  const renderDesktopLeftHud = () => (
+    <View
+      pointerEvents="box-none"
+      style={[
+        styles.desktopHudWrapper,
+        {
+          top: 16,
+        },
+      ]}
+    >
+      {renderTopBarCard()}
+      {renderFilterRowContent()}
+    </View>
+  );
 
   if (gpsStatus === 'loading') {
     return (
@@ -1049,8 +1124,12 @@ export function MapHomeScreen({
         onRegionChange={handleRegionChange}
       />
 
-      {renderFloatingTopBar()}
-      {renderFilterBar()}
+      {isDesktopWeb ? renderDesktopLeftHud() : (
+        <>
+          {renderFloatingTopBar()}
+          {renderFilterBar()}
+        </>
+      )}
 
       {/* Botão flutuante manual "Minha Localização" */}
       <Pressable
@@ -1058,16 +1137,22 @@ export function MapHomeScreen({
         disabled={isCenteringGps}
         accessibilityLabel="Minha Localização"
         android_ripple={{ color: colors.accentSoft }}
-        style={[
+        style={({ pressed, hovered }) => [
           styles.myLocationFab,
+          Platform.OS === 'web' ? styles.webPointer : null,
           cardShadow,
           {
-            bottom: Math.max(20, insets.bottom + 16) + (session?.isDemo ? 74 : 62),
-            right: 16,
+            bottom: isDesktopWeb
+              ? session?.isDemo
+                ? 24
+                : 88
+              : Math.max(20, insets.bottom + 16) + (session?.isDemo ? 74 : 62),
+            right: isDesktopWeb ? 24 : 16,
             backgroundColor: colors.card,
             borderColor: colors.border,
             borderWidth,
             borderRadius: radiusButton,
+            opacity: pressed ? 0.85 : hovered ? 0.94 : 1,
           },
         ]}
       >
@@ -1083,15 +1168,15 @@ export function MapHomeScreen({
         <View
           pointerEvents="box-none"
           style={[
-            styles.demoReadOnlyWrapper,
+            isDesktopWeb ? styles.desktopDemoWrapper : styles.demoReadOnlyWrapper,
             {
-              bottom: Math.max(16, insets.bottom + 12),
+              bottom: isDesktopWeb ? 24 : Math.max(16, insets.bottom + 12),
             },
           ]}
         >
           <View
             style={[
-              SharedStyles.contentContainer,
+              !isDesktopWeb ? SharedStyles.contentContainer : styles.desktopCardFullWidth,
               styles.demoReadOnlyBar,
               cardShadow,
               {
@@ -1120,15 +1205,16 @@ export function MapHomeScreen({
         <Pressable
           onPress={handleOpenReportCamera}
           android_ripple={{ color: colors.accentSoft }}
-          style={({ pressed }) => [
+          style={({ pressed, hovered }) => [
             styles.fab,
+            Platform.OS === 'web' ? styles.webPointer : null,
             cardShadow,
             {
-              bottom: Math.max(20, insets.bottom + 16),
-              right: 16,
+              bottom: isDesktopWeb ? 24 : Math.max(20, insets.bottom + 16),
+              right: isDesktopWeb ? 24 : 16,
               backgroundColor: colors.primary,
               borderRadius: radiusButton,
-              opacity: pressed ? 0.9 : 1,
+              opacity: pressed ? 0.9 : hovered ? 0.95 : 1,
             },
           ]}
         >
@@ -1422,6 +1508,28 @@ const styles = StyleSheet.create({
     right: 16,
     zIndex: 20,
   },
+  desktopHudWrapper: {
+    position: 'absolute',
+    left: 16,
+    width: 420,
+    maxWidth: '42%',
+    gap: 10,
+    zIndex: 20,
+  },
+  desktopDemoWrapper: {
+    position: 'absolute',
+    left: 16,
+    width: 420,
+    maxWidth: '42%',
+    zIndex: 15,
+  },
+  desktopCardFullWidth: {
+    width: '100%',
+  },
+  webPointer: Platform.select({
+    web: { cursor: 'pointer' },
+    default: {},
+  }),
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',

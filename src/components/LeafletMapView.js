@@ -153,6 +153,13 @@ function buildLeafletHtml(initialLat, initialLng, palette) {
       font-weight: 600;
       pointer-events: none;
     }
+    .olho-div-marker {
+      background: transparent;
+      border: none;
+    }
+    .leaflet-marker-icon.olho-div-marker {
+      z-index: 400;
+    }
   </style>
 </head>
 <body>
@@ -170,9 +177,11 @@ function buildLeafletHtml(initialLat, initialLng, palette) {
 
       var map = null;
       var markerLayer = null;
+      var markerInstances = {};
       var userMarker = null;
       var currentMarkers = [];
       var moveTimer = null;
+      var lastIsCloseZoom = null;
 
       function postToNative(payload) {
         try {
@@ -216,28 +225,79 @@ function buildLeafletHtml(initialLat, initialLng, palette) {
         );
       }
 
-      function renderMarkers() {
+      function reconcileMarkers(forceIconUpdate) {
         if (!map || !markerLayer || !window.L) return;
-        markerLayer.clearLayers();
         var zoom = map.getZoom();
         var isClose = zoom >= 15;
+        var tierChanged = lastIsCloseZoom !== isClose;
+        lastIsCloseZoom = isClose;
+
         var size = isClose ? [48, 48] : [32, 32];
         var anchor = isClose ? [24, 24] : [16, 16];
+        var seenIds = {};
 
         for (var i = 0; i < currentMarkers.length; i++) {
           (function (m) {
+            var idKey = String(m.id);
+            seenIds[idKey] = true;
+            var isPending = m.status !== 'fixed' && Number(m.pendingReviewCount || 0) > 0;
+            var zOffset = m.isSelected ? 500 : isPending ? 200 : 100;
+            var renderKey = [
+              m.status,
+              Number(m.pendingReviewCount || 0),
+              m.isSelected ? 1 : 0,
+              m.thumbSrc || '',
+              isClose ? 'close' : 'far',
+            ].join('|');
+
+            var existing = markerInstances[idKey];
+            if (existing) {
+              var latLng = existing.marker.getLatLng();
+              if (latLng.lat !== m.latitude || latLng.lng !== m.longitude) {
+                existing.marker.setLatLng([m.latitude, m.longitude]);
+              }
+              if (forceIconUpdate || tierChanged || existing.renderKey !== renderKey) {
+                var nextIcon = window.L.divIcon({
+                  className: 'olho-div-marker',
+                  html: createPinHtml(m, zoom),
+                  iconSize: size,
+                  iconAnchor: anchor,
+                });
+                existing.marker.setIcon(nextIcon);
+                existing.marker.setZIndexOffset(zOffset);
+                existing.renderKey = renderKey;
+              }
+              if (!markerLayer.hasLayer(existing.marker)) {
+                markerLayer.addLayer(existing.marker);
+              }
+              return;
+            }
+
             var icon = window.L.divIcon({
-              className: '',
+              className: 'olho-div-marker',
               html: createPinHtml(m, zoom),
               iconSize: size,
               iconAnchor: anchor,
             });
-            var marker = window.L.marker([m.latitude, m.longitude], { icon: icon });
+            var marker = window.L.marker([m.latitude, m.longitude], {
+              icon: icon,
+              zIndexOffset: zOffset,
+            });
             marker.on('click', function () {
               postToNative({ type: 'MARKER_PRESS', id: m.id });
             });
             markerLayer.addLayer(marker);
+            markerInstances[idKey] = { marker: marker, renderKey: renderKey };
           })(currentMarkers[i]);
+        }
+
+        var existingKeys = Object.keys(markerInstances);
+        for (var j = 0; j < existingKeys.length; j++) {
+          var key = existingKeys[j];
+          if (!seenIds[key]) {
+            markerLayer.removeLayer(markerInstances[key].marker);
+            delete markerInstances[key];
+          }
         }
       }
 
@@ -287,6 +347,8 @@ function buildLeafletHtml(initialLat, initialLng, palette) {
         map = window.L.map('map', {
           zoomControl: false,
           attributionControl: false,
+          zoomAnimation: true,
+          markerZoomAnimation: true,
         }).setView([INITIAL_LAT, INITIAL_LNG], 16);
 
         var tileErrorCount = 0;
@@ -315,9 +377,13 @@ function buildLeafletHtml(initialLat, initialLng, palette) {
         primaryTiles.addTo(map);
 
         markerLayer = window.L.layerGroup().addTo(map);
+        lastIsCloseZoom = map.getZoom() >= 15;
 
         map.on('zoomend', function () {
-          renderMarkers();
+          var isCloseNow = map.getZoom() >= 15;
+          if (isCloseNow !== lastIsCloseZoom) {
+            reconcileMarkers(false);
+          }
         });
 
         map.on('moveend', function () {
@@ -326,6 +392,9 @@ function buildLeafletHtml(initialLat, initialLng, palette) {
         });
 
         updateUserLocation(INITIAL_LAT, INITIAL_LNG, false);
+        if (currentMarkers.length > 0) {
+          reconcileMarkers(true);
+        }
         postToNative({ type: 'MAP_READY' });
       }
 
@@ -340,7 +409,7 @@ function buildLeafletHtml(initialLat, initialLng, palette) {
           }
         } else if (msg.type === 'SET_MARKERS') {
           currentMarkers = Array.isArray(msg.markers) ? msg.markers : [];
-          renderMarkers();
+          reconcileMarkers(false);
         }
       };
 
@@ -398,6 +467,7 @@ export const LeafletMapView = forwardRef(function LeafletMapView(
   const iframeRef = useRef(null);
   const [mapReady, setMapReady] = useState(false);
   const initialCenterRef = useRef(initialCenter);
+  const initialColorsRef = useRef(colors);
   const base64CacheRef = useRef(new Map());
 
   const htmlSource = useMemo(
@@ -405,9 +475,9 @@ export const LeafletMapView = forwardRef(function LeafletMapView(
       buildLeafletHtml(
         initialCenterRef.current.latitude,
         initialCenterRef.current.longitude,
-        colors
+        initialColorsRef.current
       ),
-    [colors]
+    []
   );
 
   const sendCommand = useCallback((payload) => {
@@ -556,9 +626,6 @@ export const LeafletMapView = forwardRef(function LeafletMapView(
           ref: iframeRef,
           srcDoc: htmlSource,
           title: 'Mapa Olho na Via',
-          onLoad: () => {
-            setMapReady(true);
-          },
           style: {
             width: '100%',
             height: '100%',
