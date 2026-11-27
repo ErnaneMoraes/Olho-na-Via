@@ -1,8 +1,18 @@
 export const APP_NAME = 'Olho na Via';
-export const APP_VERSION = '1.7.6';
-export const APP_BUILD_TAG = '2026.11.27-desktop-left-hud-persistent-pins';
+export const APP_VERSION = '1.7.7';
+export const APP_BUILD_TAG = '2026.11.27-lazy-hd-photo-viewer';
 
 export const APP_CHANGELOG = [
+  {
+    version: '1.7.7',
+    date: '27/11/2026',
+    title: 'Carregamento Sob Demanda da Foto Original HD ao Ampliar',
+    highlights: [
+      'A pré-visualização principal do cartão de detalhes agora carrega apenas a miniatura imediata com o selo estático "Toque para ampliar", evitando consumo desnecessário de dados.',
+      'A foto original em alta resolução (HD) passa a ser baixada somente quando o usuário toca na imagem ou em miniaturas do Histórico de Verificações / revisões pendentes para abrir o visualizador em tela cheia.',
+      'Enquanto a imagem HD carrega no visualizador, a miniatura permanece visível como fundo instantâneo acompanhada do indicador discreto "Carregando foto original...".',
+    ],
+  },
   {
     version: '1.7.6',
     date: '27/11/2026',

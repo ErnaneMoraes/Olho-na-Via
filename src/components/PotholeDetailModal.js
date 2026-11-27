@@ -134,10 +134,10 @@ export function PotholeDetailModal({
 
   const [resolvedAddress, setResolvedAddress] = useState('');
   const [loadingAddress, setLoadingAddress] = useState(false);
-  const [fullImageLoaded, setFullImageLoaded] = useState(false);
 
   // Estado do visualizador zoom inline (sem empilhar dois Modals no Android)
-  const [zoomViewerUri, setZoomViewerUri] = useState(null);
+  const [zoomViewerMedia, setZoomViewerMedia] = useState(null);
+  const [zoomFullStatus, setZoomFullStatus] = useState('idle');
   const [zoomScaleDisplay, setZoomScaleDisplay] = useState(1);
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const currentScaleRef = useRef(1);
@@ -316,13 +316,12 @@ export function PotholeDetailModal({
 
   useEffect(() => {
     if (!visible || !pothole) {
-      setFullImageLoaded(false);
-      setZoomViewerUri(null);
+      setZoomViewerMedia(null);
+      setZoomFullStatus('idle');
       return;
     }
 
     let active = true;
-    setFullImageLoaded(false);
 
     if (pothole.streetAddress) {
       setResolvedAddress(pothole.streetAddress);
@@ -414,14 +413,19 @@ export function PotholeDetailModal({
     onClose,
   ]);
 
+  const closeZoomViewer = useCallback(() => {
+    setZoomViewerMedia(null);
+    setZoomFullStatus('idle');
+  }, []);
+
   const handleRequestClose = useCallback(() => {
     if (savingRef.current) return;
-    if (zoomViewerUri) {
-      setZoomViewerUri(null);
+    if (zoomViewerMedia) {
+      closeZoomViewer();
       return;
     }
     animateDismiss();
-  }, [zoomViewerUri, animateDismiss]);
+  }, [zoomViewerMedia, closeZoomViewer, animateDismiss]);
 
   const sheetPanResponder = useMemo(
     () =>
@@ -460,12 +464,26 @@ export function PotholeDetailModal({
     }).start();
   };
 
-  const openZoomViewer = (uri) => {
-    if (!uri) return;
+  const openZoomViewer = (mediaInput) => {
+    const thumbUri =
+      typeof mediaInput === 'string' ? mediaInput : mediaInput?.thumbUri || null;
+    const fullUri =
+      typeof mediaInput === 'string' ? mediaInput : mediaInput?.fullUri || null;
+    const resolvedFull = fullUri || thumbUri || null;
+    const resolvedThumb = thumbUri || resolvedFull;
+    if (!resolvedFull && !resolvedThumb) return;
+    const hasDistinctFull = Boolean(
+      resolvedFull && resolvedThumb && resolvedFull !== resolvedThumb
+    );
     currentScaleRef.current = 1;
     setZoomScaleDisplay(1);
     scaleAnim.setValue(1);
-    setZoomViewerUri(uri);
+    setZoomFullStatus(hasDistinctFull ? 'loading' : 'loaded');
+    setZoomViewerMedia({
+      thumbUri: resolvedThumb,
+      fullUri: resolvedFull,
+      hasDistinctFull,
+    });
   };
 
   const handleViewerTap = () => {
@@ -796,7 +814,8 @@ export function PotholeDetailModal({
     ...(Array.isArray(pothole.pendingReviewUpdateIds) ? pothole.pendingReviewUpdateIds : []),
     ...effectivePendingReviews.map((r) => r.pothole_update_id).filter(Boolean),
   ]);
-  const hasAnyPhoto = Boolean(pothole.thumbUri || pothole.fullUri);
+  const heroPreviewUri = pothole.thumbUri || pothole.fullUri || null;
+  const hasAnyPhoto = Boolean(heroPreviewUri);
 
   return (
     <Modal
@@ -904,10 +923,15 @@ export function PotholeDetailModal({
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
-              {/* Carregamento progressivo da foto: miniatura imediata + original sob demanda */}
+              {/* Miniatura imediata no cartão; foto original HD carregada somente ao ampliar */}
               {hasAnyPhoto ? (
                 <Pressable
-                  onPress={() => openZoomViewer(pothole.fullUri || pothole.thumbUri)}
+                  onPress={() =>
+                    openZoomViewer({
+                      thumbUri: pothole.thumbUri || null,
+                      fullUri: pothole.fullUri || pothole.thumbUri || null,
+                    })
+                  }
                   style={[
                     styles.heroPhotoCard,
                     cardShadow,
@@ -920,34 +944,18 @@ export function PotholeDetailModal({
                   ]}
                 >
                   <View style={[styles.heroImageContainer, { backgroundColor: colors.surfaceMuted }]}>
-                    {pothole.thumbUri ? (
+                    {heroPreviewUri ? (
                       <Image
-                        source={{ uri: pothole.thumbUri }}
+                        source={{ uri: heroPreviewUri }}
                         style={StyleSheet.absoluteFill}
                         resizeMode="cover"
                       />
                     ) : null}
 
-                    {visible && pothole.fullUri ? (
-                      <Image
-                        source={{ uri: pothole.fullUri }}
-                        style={StyleSheet.absoluteFill}
-                        resizeMode="cover"
-                        onLoadEnd={() => setFullImageLoaded(true)}
-                      />
-                    ) : null}
-
-                    {visible && pothole.fullUri && !fullImageLoaded ? (
-                      <View style={[styles.loadingPhotoPill, { backgroundColor: colors.overlay }]}>
-                        <ActivityIndicator size="small" color="#FFFFFF" />
-                        <Text style={styles.loadingPhotoText}>Carregando foto original...</Text>
-                      </View>
-                    ) : (
-                      <View style={[styles.zoomHintPill, { backgroundColor: colors.overlay }]}>
-                        <FontAwesome6 name="expand" size={11} color="#FFFFFF" />
-                        <Text style={styles.loadingPhotoText}>Toque para ampliar</Text>
-                      </View>
-                    )}
+                    <View style={[styles.zoomHintPill, { backgroundColor: colors.overlay }]}>
+                      <FontAwesome6 name="expand" size={11} color="#FFFFFF" />
+                      <Text style={styles.loadingPhotoText}>Toque para ampliar</Text>
+                    </View>
                   </View>
                 </Pressable>
               ) : (
@@ -1203,7 +1211,10 @@ export function PotholeDetailModal({
                             {reviewThumb ? (
                               <Pressable
                                 onPress={() =>
-                                  openZoomViewer(reviewItem.full_url || reviewItem.thumb_url)
+                                  openZoomViewer({
+                                    thumbUri: reviewItem.thumb_url || null,
+                                    fullUri: reviewItem.full_url || reviewItem.thumb_url || null,
+                                  })
                                 }
                                 style={[
                                   styles.pendingReviewThumbWrap,
@@ -1756,7 +1767,12 @@ export function PotholeDetailModal({
 
                             {entryThumb ? (
                               <Pressable
-                                onPress={() => openZoomViewer(entry.fullUri || entry.thumbUri)}
+                                onPress={() =>
+                                  openZoomViewer({
+                                    thumbUri: entry.thumbUri || null,
+                                    fullUri: entry.fullUri || entry.thumbUri || null,
+                                  })
+                                }
                                 style={[
                                   styles.timelineThumbWrap,
                                   { borderColor: colors.border, borderRadius: radiusInput },
@@ -1812,8 +1828,8 @@ export function PotholeDetailModal({
           </KeyboardAvoidingView>
         </Animated.View>
 
-        {/* Visualizador inline em tela cheia com pinça/toque */}
-        {zoomViewerUri ? (
+        {/* Visualizador inline em tela cheia com miniatura instantânea e HD sob demanda */}
+        {zoomViewerMedia ? (
           <View
             style={[
               styles.zoomOverlay,
@@ -1848,7 +1864,7 @@ export function PotholeDetailModal({
               </View>
 
               <Pressable
-                onPress={() => setZoomViewerUri(null)}
+                onPress={closeZoomViewer}
                 accessibilityLabel="Fechar visualização"
                 style={[
                   styles.zoomCloseBtn,
@@ -1866,12 +1882,42 @@ export function PotholeDetailModal({
 
             <View style={styles.zoomStage} {...pinchPanResponder.panHandlers}>
               <Pressable onPress={handleViewerTap} style={styles.zoomTapArea}>
-                <Animated.Image
-                  source={{ uri: zoomViewerUri }}
-                  style={[styles.zoomImage, { transform: [{ scale: scaleAnim }] }]}
-                  resizeMode="contain"
-                />
+                <Animated.View style={[styles.zoomImageFrame, { transform: [{ scale: scaleAnim }] }]}>
+                  {zoomViewerMedia.thumbUri ? (
+                    <Image
+                      source={{ uri: zoomViewerMedia.thumbUri }}
+                      style={StyleSheet.absoluteFill}
+                      resizeMode="contain"
+                    />
+                  ) : null}
+
+                  {zoomViewerMedia.hasDistinctFull &&
+                  zoomViewerMedia.fullUri &&
+                  zoomFullStatus !== 'error' ? (
+                    <Image
+                      key={zoomViewerMedia.fullUri}
+                      source={{ uri: zoomViewerMedia.fullUri }}
+                      style={[
+                        StyleSheet.absoluteFill,
+                        { opacity: zoomFullStatus === 'loaded' ? 1 : 0 },
+                      ]}
+                      resizeMode="contain"
+                      onLoad={() => setZoomFullStatus('loaded')}
+                      onError={() => setZoomFullStatus('error')}
+                    />
+                  ) : null}
+                </Animated.View>
               </Pressable>
+
+              {zoomFullStatus === 'loading' ? (
+                <View
+                  pointerEvents="none"
+                  style={[styles.zoomLoadingPill, { backgroundColor: colors.overlay }]}
+                >
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <Text style={styles.loadingPhotoText}>Carregando foto original...</Text>
+                </View>
+              ) : null}
             </View>
 
             <View style={styles.zoomControlsBar}>
@@ -2041,17 +2087,6 @@ const styles = StyleSheet.create({
     position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  loadingPhotoPill: {
-    position: 'absolute',
-    bottom: 10,
-    right: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    gap: 7,
   },
   zoomHintPill: {
     position: 'absolute',
@@ -2366,9 +2401,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  zoomImage: {
+  zoomImageFrame: {
     width: '100%',
     height: '100%',
+    position: 'relative',
+  },
+  zoomLoadingPill: {
+    position: 'absolute',
+    bottom: 12,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    gap: 7,
   },
   zoomControlsBar: {
     flexDirection: 'row',

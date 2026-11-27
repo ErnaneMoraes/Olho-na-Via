@@ -2,7 +2,7 @@
   "expo": {
     "name": "Olho na Via",
     "slug": "olho-na-via",
-    "version": "1.7.6",
+    "version": "1.7.7",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
