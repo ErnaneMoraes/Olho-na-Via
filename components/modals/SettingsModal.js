@@ -943,7 +943,7 @@ export function SettingsModal({
               >
                 <View style={styles.subsectionList}>
                   <Text style={[styles.helperText, { color: colors.adminCardTitle }]}>
-                    Gerencie registros, fotos no Storage, comentários, perfis, contas e auditoria.
+                    Gerencie usuários, registros e fotos no Storage e trilha de auditoria.
                   </Text>
                   <DangerButton
                     compact

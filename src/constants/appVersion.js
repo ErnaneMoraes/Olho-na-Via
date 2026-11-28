@@ -1,8 +1,18 @@
 export const APP_NAME = 'Olho na Via';
-export const APP_VERSION = '1.7.7';
-export const APP_BUILD_TAG = '2026.11.27-lazy-hd-photo-viewer';
+export const APP_VERSION = '1.7.8';
+export const APP_BUILD_TAG = '2026.11.28-admin-master-detail-panel';
 
 export const APP_CHANGELOG = [
+  {
+    version: '1.7.8',
+    date: '28/11/2026',
+    title: 'Painel Administrativo Reorganizado com Abas e Navegação Master-Detail',
+    highlights: [
+      'Barra superior segmentada com 3 abas e contagens em tempo real: Usuários, Registros & Fotos e Auditoria.',
+      'Aba Usuários reformulada no padrão lista compacta primeiro (busca por apelido/e-mail + badge de papel) e visão de detalhes com dados completos e ações administrativas (alterar senha, conceder/remover admin, bloquear/desbloquear, apagar perfil e excluir conta).',
+      'Aba Registros & Fotos reorganizada com filtros rápidos (Todos, Abertos, Revisão, Tampados), linhas compactas com miniatura 48x48 e contagem de fotos, além de tela de detalhes com foto ampliável sob demanda, identidade real, Aprovar/Recusar e atualizações vinculadas.',
+    ],
+  },
   {
     version: '1.7.7',
     date: '27/11/2026',

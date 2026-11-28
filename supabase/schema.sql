@@ -7,8 +7,12 @@ create extension if not exists "pgcrypto";
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   nickname text not null check (char_length(trim(nickname)) >= 2),
+  is_blocked boolean not null default false,
   created_at timestamptz not null default now()
 );
+
+alter table public.profiles
+  add column if not exists is_blocked boolean not null default false;
 
 alter table public.profiles enable row level security;
 
@@ -174,10 +178,11 @@ create table if not exists public.app_admins (
 
 alter table public.app_admins enable row level security;
 
+drop policy if exists "Usuário autenticado verifica apenas o próprio status de admin" on public.app_admins;
 create policy "Usuário autenticado verifica apenas o próprio status de admin"
   on public.app_admins for select
   to authenticated
-  using (auth.uid() = user_id);
+  using (auth.uid() = user_id or public.is_app_admin());
 
 create or replace function public.is_app_admin()
 returns boolean
@@ -351,6 +356,95 @@ $$;
 
 revoke all on function public.admin_reset_user_password(uuid, text) from public;
 grant execute on function public.admin_reset_user_password(uuid, text) to authenticated;
+
+-- RPC segura para conceder ou remover privilégios administrativos
+create or replace function public.admin_set_admin_role(target_user_id uuid, make_admin boolean)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+begin
+  if not public.is_app_admin() then
+    raise exception 'Acesso negado: somente administradores podem alterar privilégios administrativos.';
+  end if;
+
+  if target_user_id is null then
+    raise exception 'ID de usuário inválido.';
+  end if;
+
+  if not make_admin and target_user_id = auth.uid() then
+    raise exception 'Operação bloqueada: você não pode remover o próprio acesso de administrador.';
+  end if;
+
+  if make_admin then
+    insert into public.app_admins (user_id)
+    values (target_user_id)
+    on conflict (user_id) do nothing;
+
+    insert into public.admin_audit_logs (admin_user_id, action, target_type, target_id, details)
+    values (auth.uid(), 'GRANT_ADMIN', 'auth_user', target_user_id::text, '{}'::jsonb);
+  else
+    delete from public.app_admins where user_id = target_user_id;
+
+    insert into public.admin_audit_logs (admin_user_id, action, target_type, target_id, details)
+    values (auth.uid(), 'REVOKE_ADMIN', 'auth_user', target_user_id::text, '{}'::jsonb);
+  end if;
+
+  return true;
+end;
+$$;
+
+revoke all on function public.admin_set_admin_role(uuid, boolean) from public;
+grant execute on function public.admin_set_admin_role(uuid, boolean) to authenticated;
+
+-- RPC segura para bloquear ou desbloquear um usuário
+create or replace function public.admin_set_user_blocked(target_user_id uuid, blocked boolean)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+begin
+  if not public.is_app_admin() then
+    raise exception 'Acesso negado: somente administradores podem bloquear ou desbloquear usuários.';
+  end if;
+
+  if target_user_id is null then
+    raise exception 'ID de usuário inválido.';
+  end if;
+
+  if target_user_id = auth.uid() then
+    raise exception 'Operação bloqueada: você não pode bloquear a própria conta administrativa.';
+  end if;
+
+  if blocked and exists (select 1 from public.app_admins where user_id = target_user_id) then
+    raise exception 'Operação bloqueada: remova os privilégios de administrador antes de bloquear este usuário.';
+  end if;
+
+  update public.profiles
+  set is_blocked = blocked
+  where id = target_user_id;
+
+  if not found then
+    raise exception 'Perfil de usuário não encontrado.';
+  end if;
+
+  insert into public.admin_audit_logs (admin_user_id, action, target_type, target_id, details)
+  values (
+    auth.uid(),
+    case when blocked then 'BLOCK_USER' else 'UNBLOCK_USER' end,
+    'profile',
+    target_user_id::text,
+    '{}'::jsonb
+  );
+
+  return true;
+end;
+$$;
+
+revoke all on function public.admin_set_user_blocked(uuid, boolean) from public;
+grant execute on function public.admin_set_user_blocked(uuid, boolean) to authenticated;
 
 -- 7. Notificações no App (Revisão de Correção pelo Autor)
 create table if not exists public.user_notifications (

@@ -1,4 +1,5 @@
 import { recordDiagnosticEvent } from './diagnosticLogService';
+import { fetchPendingReviewsSummaryByPotholeIds } from './notificationService';
 import { isSupabaseConfigured, supabase } from './supabaseClient';
 
 const STORAGE_BUCKET = 'pothole-photos';
@@ -7,6 +8,17 @@ function createAdminError(message) {
   const err = new Error(message);
   err.isAdminError = true;
   return err;
+}
+
+function isMissingRpcError(error) {
+  const code = String(error?.code || '').toUpperCase();
+  const msg = String(error?.message || '').toLowerCase();
+  return (
+    code === '42883' ||
+    code === 'PGRST202' ||
+    msg.includes('could not find the function') ||
+    msg.includes('does not exist')
+  );
 }
 
 /**
@@ -271,6 +283,70 @@ export async function adminResetUserPassword(targetUserId, newPassword) {
   return true;
 }
 
+/**
+ * Concede ou remove privilégios de administrador de um usuário via RPC SECURITY DEFINER.
+ */
+export async function adminSetUserAdminRole(targetUserId, makeAdmin) {
+  if (!targetUserId) throw createAdminError('ID do usuário inválido.');
+  const adminUser = await requireAdminSession();
+
+  if (!makeAdmin && targetUserId === adminUser.id) {
+    throw createAdminError('Operação bloqueada: você não pode remover seu próprio acesso de administrador.');
+  }
+
+  const { error } = await supabase.rpc('admin_set_admin_role', {
+    target_user_id: targetUserId,
+    make_admin: Boolean(makeAdmin),
+  });
+
+  if (error) {
+    if (isMissingRpcError(error)) {
+      throw createAdminError(
+        'Função admin_set_admin_role não encontrada no Supabase. Execute o script atualizado supabase/schema.sql no SQL Editor.'
+      );
+    }
+    throw createAdminError(`Falha ao atualizar privilégios administrativos: ${error.message}`);
+  }
+
+  await recordDiagnosticEvent(
+    'ADMIN',
+    makeAdmin ? 'Privilégios de admin concedidos' : 'Privilégios de admin removidos'
+  );
+  return true;
+}
+
+/**
+ * Bloqueia ou desbloqueia um usuário via RPC SECURITY DEFINER.
+ */
+export async function adminSetUserBlocked(targetUserId, blocked) {
+  if (!targetUserId) throw createAdminError('ID do usuário inválido.');
+  const adminUser = await requireAdminSession();
+
+  if (targetUserId === adminUser.id) {
+    throw createAdminError('Operação bloqueada: você não pode bloquear a própria conta administrativa.');
+  }
+
+  const { error } = await supabase.rpc('admin_set_user_blocked', {
+    target_user_id: targetUserId,
+    blocked: Boolean(blocked),
+  });
+
+  if (error) {
+    if (isMissingRpcError(error)) {
+      throw createAdminError(
+        'Função admin_set_user_blocked não encontrada no Supabase. Execute o script atualizado supabase/schema.sql no SQL Editor.'
+      );
+    }
+    throw createAdminError(`Falha ao atualizar bloqueio do usuário: ${error.message}`);
+  }
+
+  await recordDiagnosticEvent(
+    'ADMIN',
+    blocked ? 'Usuário bloqueado por moderação' : 'Usuário desbloqueado por moderação'
+  );
+  return true;
+}
+
 export function formatAdminRealAuthorLabel(identity, fallbackUserId = null) {
   if (identity?.nickname && identity?.email) {
     return `Postado como Anônimo • Autor real: ${identity.nickname} (${identity.email})`;
@@ -330,7 +406,7 @@ export async function fetchAdminUserIdentitiesMap() {
   return map;
 }
 
-export async function fetchAdminPotholes(limit = 50) {
+export async function fetchAdminPotholes(limit = 100) {
   await requireAdminSession();
   const [{ data, error }, identitiesMap] = await Promise.all([
     supabase
@@ -345,13 +421,18 @@ export async function fetchAdminPotholes(limit = 50) {
 
   if (error) throw createAdminError(`Erro ao carregar registros: ${error.message}`);
   const rows = Array.isArray(data) ? data : [];
+  const pendingSummary = await fetchPendingReviewsSummaryByPotholeIds(
+    rows.map((row) => row.id).filter(Boolean)
+  ).catch(() => ({}));
+
   return rows.map((row) => ({
     ...row,
+    pending_review_count: pendingSummary[row.id]?.count || 0,
     real_author: row.user_id ? identitiesMap[row.user_id] || null : null,
   }));
 }
 
-export async function fetchAdminUpdates(limit = 50) {
+export async function fetchAdminUpdates(limit = 200) {
   await requireAdminSession();
   const [{ data, error }, identitiesMap] = await Promise.all([
     supabase
@@ -372,22 +453,49 @@ export async function fetchAdminUpdates(limit = 50) {
   }));
 }
 
-export async function fetchAdminProfiles(limit = 50) {
+export async function fetchAdminProfiles(limit = 100) {
   await requireAdminSession();
-  const [{ data, error }, identitiesMap] = await Promise.all([
+
+  const [profilesRes, identitiesMap, adminsRes, blockedRes] = await Promise.all([
     supabase
       .from('profiles')
       .select('id, nickname, created_at')
       .order('created_at', { ascending: false })
       .limit(limit),
     fetchAdminUserIdentitiesMap(),
+    supabase
+      .from('app_admins')
+      .select('user_id')
+      .then((res) => res)
+      .catch(() => ({ data: null, error: true })),
+    supabase
+      .from('profiles')
+      .select('id, is_blocked')
+      .limit(limit)
+      .then((res) => res)
+      .catch(() => ({ data: null, error: true })),
   ]);
 
-  if (error) throw createAdminError(`Erro ao carregar perfis: ${error.message}`);
-  const rows = Array.isArray(data) ? data : [];
+  if (profilesRes.error) throw createAdminError(`Erro ao carregar perfis: ${profilesRes.error.message}`);
+
+  const adminSet = new Set(
+    !adminsRes?.error && Array.isArray(adminsRes?.data)
+      ? adminsRes.data.map((r) => r.user_id).filter(Boolean)
+      : []
+  );
+  const blockedMap = {};
+  if (!blockedRes?.error && Array.isArray(blockedRes?.data)) {
+    for (const r of blockedRes.data) {
+      if (r?.id) blockedMap[r.id] = Boolean(r.is_blocked);
+    }
+  }
+
+  const rows = Array.isArray(profilesRes.data) ? profilesRes.data : [];
   return rows.map((row) => ({
     ...row,
     email: identitiesMap[row.id]?.email || null,
+    is_admin: adminSet.has(row.id),
+    is_blocked: Boolean(blockedMap[row.id]),
   }));
 }
 
@@ -401,4 +509,18 @@ export async function fetchAdminAuditLogs(limit = 50) {
 
   if (error) throw createAdminError(`Erro ao carregar auditoria: ${error.message}`);
   return Array.isArray(data) ? data : [];
+}
+
+/**
+ * Carrega em paralelo todos os dados do Painel Administrativo para contagens das abas e visão Master-Detail.
+ */
+export async function fetchAdminPanelSnapshot() {
+  await requireAdminSession();
+  const [profiles, potholes, updates, auditLogs] = await Promise.all([
+    fetchAdminProfiles(100),
+    fetchAdminPotholes(100),
+    fetchAdminUpdates(200),
+    fetchAdminAuditLogs(50),
+  ]);
+  return { profiles, potholes, updates, auditLogs };
 }
